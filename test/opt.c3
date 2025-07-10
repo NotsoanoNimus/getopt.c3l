@@ -260,9 +260,14 @@ fn void sanity_check_result_comparisons()
 fn void simple_all()
 {
     @run_each({ "-b" }, { .has_bravo = true })!!;
+    test::@check(opt::ind == 2, "opt::ind must equal the length of the args slice +1 when all values are consumed.");   // only need to check this a few times
+
     @run_each({ "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    test::@check(opt::ind == 4, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
     @run_each({ "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+    test::@check(opt::ind == 3, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
     @run_each({ "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
+    test::@check(opt::ind == 3, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
 
     @run_each({ "-d0.7", "-gg", "-go", "-i", "werp" }, { .delta = 0.7, .golf = { 'g', 'o', 0 }, .india = 'r' })!!;
 
@@ -340,6 +345,7 @@ fn void exclusive_short_long_opts()
     // @run_each_has_long({ "-ab", "--kilo" }, { .has_alpha = true, .has_bravo = true, .has_kilo = false }, opt::MISSING_ARGUMENT)!!;
 
     @run(LONG, { "--alpha", "--juliet", "17000" }, { .has_alpha = true, .juliet = 17000 })!!;
+    test::@check(opt::ind == 4, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
 }
 
 
