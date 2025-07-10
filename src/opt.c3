@@ -15,7 +15,7 @@
 //  * by Dieter Baron and Thomas Klausner.
 //  */
 //
-module std::opt;
+module opt;
 
 import libc;
 
@@ -519,7 +519,7 @@ Globally enable error outputs to STDERR from this module.
 macro @enable_errors() => err = 1;
 
 
-macro void? @parse(#args, ...)
+macro int? @parse(#args, ...)
 {
     $assert ($vacount % 3) == 0 : `Options must be specified in triplets as "[shortname]", "[longname]", {store-ptr}.`;
 
@@ -747,6 +747,9 @@ macro void? @parse(#args, ...)
 
     // Reset indexes.
     array_storage_indexes = {};
+
+    // Return current option index.
+    return ind;
 }
 
 

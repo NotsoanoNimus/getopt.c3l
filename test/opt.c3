@@ -2,10 +2,10 @@
 // Use of this source code is governed by the MIT license,
 // a copy of which can be found in the LICENSE_STDLIB file.
 //
-// Provides some comprehensive tests of argument parsing capabilities with the std::opt module.
+// Provides some comprehensive tests of argument parsing capabilities with the opt module.
 module opt_tests;
 
-import std::opt;
+import opt;
 import std::io;
 
 
@@ -78,7 +78,7 @@ const LongOption[] LONGOPTS = {
 };
 
 
-fn void? parse_test(String[] args) =>
+fn int? parse_test(String[] args) =>
     opt::@parse(
         args,
         "a" ,   "alpha",    &t.has_alpha,
@@ -171,7 +171,7 @@ fn void? common_switch(int retval) @local
 // =====================================================================================================================
 module opt_tests @test;
 
-import std::opt;
+import opt;
 import std::io;
 
 enum CallType : const inline int @local
