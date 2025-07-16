@@ -546,10 +546,9 @@ macro int? @parse(#args, ...)
 
         $if $shortname.len > 0 :
             $assert ($shortname[0] >= 'a' &&& $shortname[0] <= 'z')
-                ||| ($shortname[0] <= 'A' &&& $shortname[0] >= 'Z')
-                ||| ($shortname[0] <= '0' &&& $shortname[0] >= '9')
-                ||| $shortname[0] == '-'
-                    : `Short-name options should match the following regular expression: [a-zA-Z0-9-][\+\?]?`;
+                ||| ($shortname[0] >= 'A' &&& $shortname[0] <= 'Z')
+                ||| ($shortname[0] >= '0' &&& $shortname[0] <= '9')
+                    : `Short-name options should match the following regular expression: [a-zA-Z0-9][\+\?]?`;
 
             $dyn_opt_str = $dyn_opt_str +++ $shortname[0];   // concat shortname onto dynamic option_str
         $endif
