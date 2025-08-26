@@ -534,22 +534,28 @@ macro bool @in(#value, #arr) @const
 }
 
 
+<*
+ @require @typeis(#args, String[]) ||| @typeis(#args, String[*])
+*>
 macro int? @parse(#args, ...)
 {
     $assert $vacount % 3 == 0 : `Options must be specified in triplets as "[shortname]", "[longname]", {store-ptr}.`;
+    var $argcount = $vacount / 3;
 
     // Used for sequentially filling array args for repeating options.
     //   256 of these because that's the width of one shortname, which is how the indices themselves are indexed.
     static ushort[256] array_storage_indexes;
+    defer array_storage_indexes = {};   // always reset these when finished
+
     char $dyn_shortname = 0x80;   // dynamic shortname values start at 0x80 for longopts w/o shortopt chars
 
     // Set up a dynamically-filled runtime longopts.
-    LongOption[$vacount / 3] longopts;
+    LongOption[$argcount] longopts;
 
-    var $dyn_opt_str = "";   // dynamic option_str
-    var $ct_argstype = (OptionArgType[$vacount / 3]){};   // indexing for OptionArgType
-    var $ct_longnames = (String[$vacount / 3]){};   // indexing for longnames
-    var $ct_shortnames = (char[$vacount / 3]){};   // indexing for shortnames
+    String $dyn_opt_str = "";   // dynamic option_str
+    OptionArgType[$argcount] $ct_argstype = {};   // indexing for OptionArgType
+    String[$argcount] $ct_longnames = {};   // indexing for longnames
+    char[$argcount] $ct_shortnames = {};   // indexing for shortnames
 
     // Iterate each provided triplet and build up all compile-time indices with accurate information.
     $for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3:
@@ -612,14 +618,7 @@ macro int? @parse(#args, ...)
         // Update 'longname' to remove possible suffix.
         $longname = @select($defined($longname[^1]) &&& @in($longname[^1], { '?', '+' }), $longname[..^2], $longname);
 
-        // longname[$idx] = { $longname }
-
-        $if $shortname.len > 0 :
-            longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
-        $else
-            longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($dyn_shortname) };
-            ++$dyn_shortname;   // next dyn_shortname
-        $endif
+        longopts[$idx] = { $longname, $has_arg_runtime, null, (int)(@select($shortname.len > 0, $shortname[0], $dyn_shortname++)) };
 
         // Track the arg type in CT variables.
         $ct_argstype[$idx] = $has_arg;
@@ -659,68 +658,51 @@ macro int? @parse(#args, ...)
                     if (longopt_index >= longopts.len) return INVALID_LONGOPT?;
 
                     // Now set the option handler's behavior based on the type of argument (if any) that's expected.
-                    $switch ($ct_argstype[$idx]) :
-                    $case OptionArgType.NO_ARGUMENT: *(assignee) = true;
-                    $case OptionArgType.INCREMENTAL: *(assignee) = *(assignee) + 1;
+                    $switch $ct_argstype[$idx] :
+                    $case OptionArgType.NO_ARGUMENT: *assignee = true;
+                    $case OptionArgType.INCREMENTAL: *assignee += 1;
 
                     $case OptionArgType.CALLBACK:
                         if (null == opt::arg.ptr || !opt::arg.len) return MISSING_ARGUMENT?;   // callbacks MUST have an argument to pass
-                        $assert $typeof(assignee).nameof == OptionCallback.typeid.nameof
+                        $assert $defined(OptionCallback z = assignee)
                             : "Callback argument types must provide a function reference of type OptionCallback. Got '" +++ $typeof(assignee).nameof +++ "'.";
-                        // Call the callback method.
-                        (assignee)(opt::arg)!;
+                        assignee(opt::arg)!;   // invoke the callback method.
 
                     $default:
                         if (null == opt::arg.ptr || !opt::arg.len)
                         {
-                            // Optional? Simply continue checking options.
-                            if (OptionArgType.OPTIONAL_ARGUMENT == $ct_argstype[$idx]) break CT_SWITCH;
-                            // Required? Throw.
-                            return MISSING_ARGUMENT?;
+                            if ($ct_argstype[$idx] == OPTIONAL_ARGUMENT) break CT_SWITCH;   // optional arg? continue checking options
+                            return MISSING_ARGUMENT?;   // required arg? throw
                         }
+
+                        $assert @typekind(assignee) == POINTER &&& $defined($typeof(assignee).inner)
+                            : "The assignee must be a pointer type and must have an '.inner' property";
 
                         // Set the passed pointer's value.
                         String arg = opt::arg;
-
-                        // Get the direct type, one dereferenced, then the base type (fully dereferenced/flattened).
                         var $ArgType = $typeof(assignee);
                         var $SingleDerefArgType = $ArgType.inner;
+                        var $DerefArgType = $ArgType.inner;   // keep digging until the type is no longer a pointer kind
+                        $for ; $DerefArgType.kindof == TypeKind.POINTER; $DerefArgType = $DerefArgType.inner: $endfor
 
-                        var $DerefArgType = $SingleDerefArgType;   // keep digging until the type is no longer a pointer
-                        $for ; $DerefArgType.kindof == TypeKind.POINTER; :
-                            $DerefArgType = $DerefArgType.inner;
-                        $endfor
+                        $switch $typeof(assignee).inner.kindof:
+                        $case ARRAY:
+                            $assert $defined($typeof((*assignee)[0])) : "The ARRAY kindof arg must be indexable";
 
-                        $switch ($DerefArgType.kindof) :
-                            $case TypeKind.VOID :       $error "Cannot assign parameter values to void values or void pointers.";
-                            $case TypeKind.POINTER :    $error "Cannot assign parameter values to pointers.";
-                            $case TypeKind.FUNC :       $error "Cannot assign parameter values to functions or function pointers.";
-                            $case TypeKind.OPTIONAL :   $error "Cannot assign parameter values to optionals.";
-                            $case TypeKind.TYPEID :     $error "Cannot assign parameter values to typeid values.";
-                            $case TypeKind.SLICE :      $error "Cannot assign parameter values to slices; use an array with a fixed length instead.";
+                            $ArgType = $typeof(assignee);
+                            $SingleDerefArgType = $typeof((*assignee)[0]);
+                            $DerefArgType = $SingleDerefArgType;   // keep digging until the type is no longer a pointer kind
+                            $for ; $DerefArgType.kindof == TypeKind.POINTER; $DerefArgType = $DerefArgType.inner: $endfor
 
-                            $case TypeKind.ARRAY :
-                                // Disgusting. Re-evaluate the types, but this time without an array wrapping.
-                                //   This will cause errors on multi-refernce array structures, but those wouldn't work with this macro anyways.
-                                $ArgType = $typeof(assignee);
-                                $SingleDerefArgType = $typeof((*(assignee))[0]);
-                                $DerefArgType = $SingleDerefArgType;
-                                $for ; $DerefArgType.kindof == TypeKind.POINTER; :
-                                    $DerefArgType = $DerefArgType.inner;
-                                $endfor
+                            ushort current_index = array_storage_indexes[(char)$shortname]++;
+                            if (current_index >= (*assignee).len) return OUT_OF_BOUNDS?;;
 
-                                ushort current_index = array_storage_indexes[(char)$shortname];
+                            (*assignee)[current_index] = ($DerefArgType)@derive_arg_value(
+                                arg, $DerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
 
-                                if (current_index >= (*(assignee)).len) return OUT_OF_BOUNDS?;
-
-                                (*(assignee))[current_index] = ($DerefArgType)@derive_arg_value(
-                                    arg, $DerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
-
-                                ++array_storage_indexes[(char)$shortname];
-
-                            $default:
-                                *(assignee) = ($SingleDerefArgType)@derive_arg_value(
-                                    arg, $SingleDerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
+                        $default:   // in the default case, we let the language allow/disallow the assignment
+                            *assignee = ($SingleDerefArgType)@derive_arg_value(
+                                arg, $SingleDerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
                         $endswitch
                     $endswitch
 
@@ -734,9 +716,6 @@ macro int? @parse(#args, ...)
         }
     }
 
-    // Reset indexes.
-    array_storage_indexes = {};
-
     // Return current option index.
     return ind;
 }
@@ -745,62 +724,64 @@ macro int? @parse(#args, ...)
 macro @derive_arg_value(String arg, $SingleDerefArgType, $DerefArgType, $ArgType) @local
 {
     $switch ($SingleDerefArgType) :
-        $case int128.typeid :
-        $case long.typeid :
-        $case int.typeid :
-        $case short.typeid :
-        $case ichar.typeid :
-        $case uint128.typeid :
-        $case ulong.typeid :
-        $case uint.typeid :
-        $case ushort.typeid :
+    $case int128.typeid :
+    $case long.typeid :
+    $case int.typeid :
+    $case short.typeid :
+    $case ichar.typeid :
+    $case uint128.typeid :
+    $case ulong.typeid :
+    $case uint.typeid :
+    $case ushort.typeid :
+        $DerefArgType? retval = arg.to_integer($DerefArgType);
+        if (catch oops = retval)
+        {
+            io::eprintf("Exception caught while parsing arg '%s' as NUMERIC type '%s': %s", arg, $DerefArgType.nameof, oops);
+
+            abort("Invalid option argument format for integer type '" +++ $SingleDerefArgType.nameof +++ "'.");
+        }
+        return retval;
+
+    $case char.typeid :
+        if (ascii::@is_digit(arg[0]))
+        {
             $DerefArgType? retval = arg.to_integer($DerefArgType);
             if (catch oops = retval)
             {
-                io::eprintf("Exception caught while parsing arg '%s' as NUMERIC type '%s': %s", arg, $DerefArgType.nameof, oops);
+                io::eprintf("Exception caught while parsing arg '%s' as CHAR type '%s': %s", arg, $DerefArgType.nameof, oops);
 
-                abort("Invalid option argument format for integer type '" +++ $SingleDerefArgType.nameof +++ "'.");
+                abort("Invalid option argument format for char type '" +++ $SingleDerefArgType.nameof +++ "'.");
             }
             return retval;
+        }
+        else
+        {
+            if (arg.len != 1) abort("Alphabetic 'char' arguments must be only a single character.");
 
-        $case char.typeid :
-            if (ascii::@is_digit(arg[0]))
-            {
-                $DerefArgType? retval = arg.to_integer($DerefArgType);
-                if (catch oops = retval)
-                {
-                    io::eprintf("Exception caught while parsing arg '%s' as CHAR type '%s': %s", arg, $DerefArgType.nameof, oops);
+            return arg[0];
+        }
 
-                    abort("Invalid option argument format for char type '" +++ $SingleDerefArgType.nameof +++ "'.");
-                }
-                return retval;
-            }
-            else
-            {
-                if (arg.len != 1) abort("Alphabetic 'char' arguments must be only a single character.");
+    $case float.typeid : return arg.to_float()!!;
+    $case double.typeid : return arg.to_double()!!;
 
-                return arg[0];
-            }
+    $case String.typeid :
+    $case ZString.typeid :
+    $case (char*).typeid :
+    $case (char[*]*).typeid :
+    $case char[*].typeid :
+        return ($SingleDerefArgType)arg;
 
-        $case float.typeid : return arg.to_float()!!;
-        $case double.typeid : return arg.to_double()!!;
+    $case WString.typeid :
+        WString? retval = arg.to_wstring();
+        if (catch oops = retval)
+        {
+                io::eprintf("Exception caught while converting argument to WString: %s", oops);
 
-        $case String.typeid :
-        $case ZString.typeid :
-        $case (char*).typeid :
-            return ($SingleDerefArgType)arg;
+                abort("Unable to convert argument to a wide string.");
+        }
+        return retval;
 
-        $case WString.typeid :
-            WString? retval = arg.to_wstring();
-            if (catch oops = retval)
-            {
-                    io::eprintf("Exception caught while converting argument to WString: %s", oops);
-
-                    abort("Unable to convert argument to a wide string.");
-            }
-            return retval;
-
-        $default:
-            $error "Type '" +++ $ArgType.nameof +++ "' could not be derived from a String argument.";
+    $default:
+        $error "Type '" +++ $ArgType.nameof +++ "' could not be derived from a String argument.";
     $endswitch
 }
