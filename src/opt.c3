@@ -549,9 +549,11 @@ macro int? @parse(#args, ...)
     var $ct_shortnames = (char[$vacount / 3]){};   // indexing for shortnames
 
     // Iterate each provided triplet and build up all compile-time indices with accurate information.
-    $for var $argidx = 0; $argidx < $vacount; $argidx += 3 :
+    $for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3 :
+    { // scoped to avoid redeclarations of 'assignee' at runtime
         var $shortname = $vaconst[$argidx];
         var $longname = $vaconst[$argidx + 1];
+        var assignee = $vaarg[$argidx + 2];
 
         $assert $longname.len > 0 ||| $shortname.len > 0
             : "You must specify at least a short or a long name for each option.";
@@ -567,26 +569,24 @@ macro int? @parse(#args, ...)
 
         // Before proceeding to the monolith below, make sure the person providing options isn't trying to be cheeky.
         $if $longname.len > 0 &&& $shortname.len > 0 :
-            $if $longname[^1] == '+' ||| $longname[^1] == '?' :
-                $assert $shortname[^1] != '+' &&& $shortname[^1] != '?'
-                    : "You can't have argument type specifiers (? or +) on both the short and long option names.";
-            $endif
-
-            $if $shortname[^1] == '+' ||| $shortname[^1] == '?' :
-                $assert $longname[^1] != '+' &&& $longname[^1] != '?'
-                    : "You can't have argument type specifiers (? or +) on both the short and long option names.";
+            $if @in($longname[^1], { '+', '?' }) &&& @in($shortname[^1], { '+', '?' }):
+                $error "You can't have argument type specifiers (? or +) on both the short and long option names.";
             $endif
         $endif
 
+        //     $if $shortname[^1] == '+' ||| $shortname[^1] == '?' :
+        //         $assert $longname[^1] != '+' &&& $longname[^1] != '?'
+        //             : "You can't have argument type specifiers (? or +) on both the short and long option names.";
+        //     $endif
+        // $endif
+
         // The third param MUST be a pointer/reference or function type.
-        var $kind_of_arg = @typekind($vaarg[$argidx + 2]);
-        $assert @in($kind_of_arg, { POINTER, FUNC })
-            : "The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a pointer or function type.";
+        var $kind_of_arg = @typekind(assignee);
+        $assert @in($kind_of_arg, { POINTER, FUNC }) : "The parameter reference " +++ $typeof(assignee).nameof +++ " is not a pointer or function type.";
 
         OptionArgType $has_arg = NO_ARGUMENT;   // default
-
         // Only 'bool*' types represent flags, which do not have arguments.
-        $if $kind_of_arg == TypeKind.FUNC ||| ! types::is_bool(($typeof($vaarg[$argidx + 2])).inner) :
+        $if $kind_of_arg == TypeKind.FUNC ||| ! types::is_bool($typeof(assignee).inner) :
             $switch :
             $case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?'): $has_arg = OPTIONAL_ARGUMENT;
             $case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+'): $has_arg = INCREMENTAL;   // incremental types do not accept arguments
@@ -595,9 +595,9 @@ macro int? @parse(#args, ...)
             $endswitch
 
             $if $has_arg == INCREMENTAL:
-                $assert $defined(*$vaarg[$argidx + 2]) &&& types::is_int($typeof(*$vaarg[$argidx + 2]))//($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
+                $assert $defined(*assignee) &&& types::is_int($typeof(*assignee))//($typeof(assignee).nameof == (uint*).typeid.nameof)
                     : "Incremental option '" +++ ($shortname.len > 0 ? $shortname : $longname) +++
-                        "' must be a pointer to an integer type (but got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
+                        "' must be a pointer to an integer type (but got '" +++ $typeof(assignee).nameof +++ "' instead).";
             $endif
 
             $if $shortname.len > 0 :
@@ -621,30 +621,31 @@ macro int? @parse(#args, ...)
         $endif
 
         $if $shortname.len > 0 :
-            longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
+            longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
         $else
-            longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($dyn_shortname[0]) };
+            longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($dyn_shortname[0]) };
             ++$dyn_shortname[0];   // next dyn_shortname
         $endif
 
         // Track the arg type in CT variables.
-        $ct_argstype[($argidx / 3)] = $has_arg;
-        $ct_longnames[$argidx / 3] = $longname;
+        $ct_argstype[$idx] = $has_arg;
+        $ct_longnames[$idx] = $longname;
         $if $shortname.len > 0 :
-            $ct_shortnames[$argidx / 3] = $shortname[0];
+            $ct_shortnames[$idx] = $shortname[0];
         $else
-            $ct_shortnames[$argidx / 3] = ($dyn_shortname[0] - 1);
+            $ct_shortnames[$idx] = ($dyn_shortname[0] - 1);
         $endif
 
         // Quickly check for duplicate short/long option names.
-        $for var $a = 0; $a < ($argidx / 3); ++$a :
-            $assert !$ct_longnames[$a].len ||| ($ct_longnames[$a] != $longname)
+        $for var $a = 0; $a < $idx; ++$a :
+            $assert !$ct_longnames[$a].len ||| $ct_longnames[$a] != $longname
                 : "Duplicate long option name '" +++ $ct_longnames[$a] +++ "' is not allowed.";
 
             // $assert ($ct_shortnames[$a] == ($dyn_shortname[0] - 1)) ||| ($ct_shortnames[$a] != $shortname[0])
-            $assert ($ct_shortnames[$a] != $ct_shortnames[$argidx / 3])
+            $assert $ct_shortnames[$a] != $ct_shortnames[$idx]
                 : "Duplicate short option character '" +++ $ct_shortnames[$a] +++ "' is not allowed.";
         $endfor
+    }
     $endfor
 
     // Reset any previous options parsing that might have been done.
@@ -660,9 +661,11 @@ macro int? @parse(#args, ...)
             if ('?' == optval) return HELP_REQUESTED?;
             if (':' == optval) return ILLEGAL_OPTION?;
 
-            $for var $argidx = 0; $argidx < $vacount; $argidx += 3 :
-                var $shortname = $ct_shortnames[$argidx / 3];
-                var $longname = $ct_longnames[$argidx / 3];
+            $for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3 :
+            {
+                var $shortname = $ct_shortnames[$idx];
+                var $longname = $ct_longnames[$idx];
+                var assignee = $vaarg[$argidx + 2];
 
                 if ((int)($shortname) == optval)
                 {
@@ -670,76 +673,74 @@ macro int? @parse(#args, ...)
                     if (longopt_index >= longopts.len) return INVALID_LONGOPT?;
 
                     // Now set the option handler's behavior based on the type of argument (if any) that's expected.
-                    $switch ($ct_argstype[($argidx / 3)]) :
-                        $case OptionArgType.NO_ARGUMENT: *($vaarg[$argidx + 2]) = true;
+                    $switch ($ct_argstype[$idx]) :
+                    $case OptionArgType.NO_ARGUMENT: *(assignee) = true;
+                    $case OptionArgType.INCREMENTAL: *(assignee) = *(assignee) + 1;
 
-                        $case OptionArgType.INCREMENTAL: *($vaarg[$argidx + 2]) = *($vaarg[$argidx + 2]) + 1;
+                    $case OptionArgType.CALLBACK:
+                        if (null == opt::arg.ptr || !opt::arg.len) return MISSING_ARGUMENT?;   // callbacks MUST have an argument to pass
+                        $assert $typeof(assignee).nameof == OptionCallback.typeid.nameof
+                            : "Callback argument types must provide a function reference of type OptionCallback. Got '" +++ $typeof(assignee).nameof +++ "'.";
+                        // Call the callback method.
+                        (assignee)(opt::arg)!;
 
-                        $case OptionArgType.CALLBACK:
-                            if (null == opt::arg.ptr || !opt::arg.len) return MISSING_ARGUMENT?;   // callbacks MUST have an argument to pass
+                    $default:
+                        if (null == opt::arg.ptr || !opt::arg.len)
+                        {
+                            // Optional? Simply continue checking options.
+                            if (OptionArgType.OPTIONAL_ARGUMENT == $ct_argstype[$idx]) break CT_SWITCH;
+                            // Required? Throw.
+                            return MISSING_ARGUMENT?;
+                        }
 
-                            $assert $typeof($vaarg[$argidx + 2]).nameof == OptionCallback.typeid.nameof
-                                : "Callback argument types must provide a function reference of type OptionCallback. Got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "'.";
+                        // Set the passed pointer's value.
+                        String arg = opt::arg;
 
-                            // Call the callback method.
-                            ($vaarg[$argidx + 2])(opt::arg)!;
+                        // Get the direct type, one dereferenced, then the base type (fully dereferenced/flattened).
+                        var $ArgType = $typeof(assignee);
+                        var $SingleDerefArgType = $ArgType.inner;
 
-                        $default:
-                            if (null == opt::arg.ptr || !opt::arg.len)
-                            {
-                                // Optional? Simply continue checking options.
-                                if (OptionArgType.OPTIONAL_ARGUMENT == $ct_argstype[($argidx / 3)]) break CT_SWITCH;
-                                // Required? Throw.
-                                return MISSING_ARGUMENT?;
-                            }
+                        var $DerefArgType = $SingleDerefArgType;   // keep digging until the type is no longer a pointer
+                        $for ; $DerefArgType.kindof == TypeKind.POINTER; :
+                            $DerefArgType = $DerefArgType.inner;
+                        $endfor
 
-                            // Set the passed pointer's value.
-                            String arg = opt::arg;
+                        $switch ($DerefArgType.kindof) :
+                            $case TypeKind.VOID :       $error "Cannot assign parameter values to void values or void pointers.";
+                            $case TypeKind.POINTER :    $error "Cannot assign parameter values to pointers.";
+                            $case TypeKind.FUNC :       $error "Cannot assign parameter values to functions or function pointers.";
+                            $case TypeKind.OPTIONAL :   $error "Cannot assign parameter values to optionals.";
+                            $case TypeKind.TYPEID :     $error "Cannot assign parameter values to typeid values.";
+                            $case TypeKind.SLICE :      $error "Cannot assign parameter values to slices; use an array with a fixed length instead.";
 
-                            // Get the direct type, one dereferenced, then the base type (fully dereferenced/flattened).
-                            var $ArgType = $typeof($vaarg[$argidx + 2]);
-                            var $SingleDerefArgType = $ArgType.inner;
+                            $case TypeKind.ARRAY :
+                                // Disgusting. Re-evaluate the types, but this time without an array wrapping.
+                                //   This will cause errors on multi-refernce array structures, but those wouldn't work with this macro anyways.
+                                $ArgType = $typeof(assignee);
+                                $SingleDerefArgType = $typeof((*(assignee))[0]);
+                                $DerefArgType = $SingleDerefArgType;
+                                $for ; $DerefArgType.kindof == TypeKind.POINTER; :
+                                    $DerefArgType = $DerefArgType.inner;
+                                $endfor
 
-                            var $DerefArgType = $SingleDerefArgType;   // keep digging until the type is no longer a pointer
-                            $for ; $DerefArgType.kindof == TypeKind.POINTER; :
-                                $DerefArgType = $DerefArgType.inner;
-                            $endfor
+                                ushort current_index = array_storage_indexes[(char)$shortname];
 
-                            $switch ($DerefArgType.kindof) :
-                                $case TypeKind.VOID :       $error "Cannot assign parameter values to void values or void pointers.";
-                                $case TypeKind.POINTER :    $error "Cannot assign parameter values to pointers.";
-                                $case TypeKind.FUNC :       $error "Cannot assign parameter values to functions or function pointers.";
-                                $case TypeKind.OPTIONAL :   $error "Cannot assign parameter values to optionals.";
-                                $case TypeKind.TYPEID :     $error "Cannot assign parameter values to typeid values.";
-                                $case TypeKind.SLICE :      $error "Cannot assign parameter values to slices; use an array with a fixed length instead.";
+                                if (current_index >= (*(assignee)).len) return OUT_OF_BOUNDS?;
 
-                                $case TypeKind.ARRAY :
-                                    // Disgusting. Re-evaluate the types, but this time without an array wrapping.
-                                    //   This will cause errors on multi-refernce array structures, but those wouldn't work with this macro anyways.
-                                    $ArgType = $typeof($vaarg[$argidx + 2]);
-                                    $SingleDerefArgType = $typeof((*($vaarg[$argidx + 2]))[0]);
-                                    $DerefArgType = $SingleDerefArgType;
-                                    $for ; $DerefArgType.kindof == TypeKind.POINTER; :
-                                        $DerefArgType = $DerefArgType.inner;
-                                    $endfor
+                                (*(assignee))[current_index] = ($DerefArgType)@derive_arg_value(
+                                    arg, $DerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
 
-                                    ushort current_index = array_storage_indexes[(char)$shortname];
+                                ++array_storage_indexes[(char)$shortname];
 
-                                    if (current_index >= (*($vaarg[$argidx + 2])).len) return OUT_OF_BOUNDS?;
-
-                                    (*($vaarg[$argidx + 2]))[current_index] = ($DerefArgType)@derive_arg_value(
-                                        arg, $DerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
-
-                                    ++array_storage_indexes[(char)$shortname];
-
-                                $default:
-                                    *($vaarg[$argidx + 2]) = ($SingleDerefArgType)@derive_arg_value(
-                                        arg, $SingleDerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
-                            $endswitch
+                            $default:
+                                *(assignee) = ($SingleDerefArgType)@derive_arg_value(
+                                    arg, $SingleDerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
+                        $endswitch
                     $endswitch
 
                     break CT_SWITCH;
                 }
+            }
             $endfor
 
             // Default to not knowing the option that was presented.
