@@ -31,7 +31,7 @@ bool has_short_name;
 String optional_val;
 uint ctr;
 
-if (catch oops = opt::@parse(
+if (catch opt::@parse(
     args,
     "s", "short-name", &has_short_name,
     "o?", "optional", &optional_val,
