@@ -142,12 +142,15 @@ fn int parse_long_options(String[] args, ZString option_str, LongOption[] option
         current_argv_len = current_argv.len();
     }
 
-    for (int i = 0; i < options.len && options[i].name; ++i)   // note: 'len' allows us to remove 'sentinel' (null) longopts
+    // Since `options` is a bounded array, no need to check for a sentinel (NULL 'name' value/entry).
+    foreach (int i, option : options)
     {
-        /* find matching long option */
-        if (current_argv.str_view()[:current_argv_len] != options[i].name.str_view()) continue;
+        if (!option.name.len()) continue;   // skip empty names
 
-        if (options[i].name.len() == current_argv_len)
+        /* find matching long option */
+        if (current_argv.str_view()[:current_argv_len] != option.name.str_view()) continue;
+
+        if (option.name.len() == current_argv_len)
         {
             /* exact match */
             match = i;
@@ -164,9 +167,9 @@ fn int parse_long_options(String[] args, ZString option_str, LongOption[] option
         }
         else if (
             flags.long_only
-            || options[i].has_arg != options[match].has_arg
-            || options[i].flag != options[match].flag
-            || options[i].val != options[match].val
+            || option.has_arg != options[match].has_arg
+            || option.flag != options[match].flag
+            || option.val != options[match].val
         ) {
             second_partial_match = 1;
         }
@@ -609,7 +612,7 @@ macro int? @parse(#args, ...)
         // Update 'longname' to remove possible suffix.
         $longname = @select($defined($longname[^1]) &&& @in($longname[^1], { '?', '+' }), $longname[..^2], $longname);
 
-        longname[$idx] = { $longname }
+        // longname[$idx] = { $longname }
 
         $if $shortname.len > 0 :
             longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
