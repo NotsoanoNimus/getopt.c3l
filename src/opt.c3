@@ -28,10 +28,13 @@ const BAD_ARG = ':';
 
 const DEFAULT_PREFIX = '-';
 
-const int NO_PREFIX @local = -1;
-const int D_PREFIX @local = 0;
-const int DD_PREFIX @local = 1;
-const int W_PREFIX @local = 2;
+enum GetoptPrefixType : const inline int @local
+{
+    NO_PREFIX = -1,
+    D_PREFIX = 0,
+    DD_PREFIX = 1,
+    W_PREFIX = 2,
+}
 
 const char[1] PLACEHOLDER @local = {0};   // used to mark an empty 'place' value
 
@@ -60,9 +63,9 @@ struct LongOption
 // Used to control getopt_long behaviors internally.
 bitstruct GetoptFlags : char @local
 {
-    bool permute : 0;
-    bool all_args : 1;
-    bool long_only : 2;
+    bool permute;
+    bool all_args;
+    bool long_only;
 }
 
 
@@ -81,7 +84,7 @@ char* place @local = &PLACEHOLDER[0];
 
 int nonopt_start @local = -1;
 int nonopt_end @local = -1;
-int dash_prefix @local = -1;
+GetoptPrefixType dash_prefix @local = NO_PREFIX;
 
 
 fn void permute_args(int panonopt_start, int panonopt_end, int opt_end, String[] args) @local
@@ -106,9 +109,7 @@ fn void permute_args(int panonopt_start, int panonopt_end, int opt_end, String[]
 }
 
 
-fn int parse_long_options(
-    String[] args, ZString option_str, LongOption[] options, int* idx, int short_too, GetoptFlags flags
-) @local
+fn int parse_long_options(String[] args, ZString option_str, LongOption[] options, int* idx, int short_too, GetoptFlags flags) @local
 {
     char* current_dash;
     usz current_argv_len;
@@ -262,9 +263,7 @@ fn int parse_long_options(
 }
 
 
-fn int getopt_internal(
-    String[] args, ZString option_str, LongOption[] options, int* options_index, GetoptFlags flags
-) @local
+fn int getopt_internal(String[] args, ZString option_str, LongOption[] options, int* options_index, GetoptFlags flags) @local
 {
     // NOTE: This translation explicitly prefers the GNU extensions to getopt and cuts out any #else blocks.
     char* option_letter_list_index;
@@ -519,9 +518,22 @@ Globally enable error outputs to STDERR from this module.
 macro @enable_errors() => err = 1;
 
 
+<*
+ @require $defined($typefrom($typeof(#value).typeid)[] $arr = #arr)
+*>
+macro bool @in(#value, #arr) @const
+{
+    $typefrom($typeof(#value).typeid)[] $arr = #arr;
+    $foreach $val : $arr :
+        $if #value == $val: return true; $endif
+    $endforeach
+    return false;
+}
+
+
 macro int? @parse(#args, ...)
 {
-    $assert ($vacount % 3) == 0 : `Options must be specified in triplets as "[shortname]", "[longname]", {store-ptr}.`;
+    $assert $vacount % 3 == 0 : `Options must be specified in triplets as "[shortname]", "[longname]", {store-ptr}.`;
 
     // Used for sequentially filling array args for repeating options.
     //   256 of these because that's the width of one shortname, which is how the indices themselves are indexed.
@@ -529,7 +541,7 @@ macro int? @parse(#args, ...)
     var $dyn_shortname = { 0x80, 0 };   // dynamic shortname values start at 0x80 for longopts w/o shortopt chars
 
     // Set up a dynamically filled longopts.
-    LongOption[($vacount / 3)] longopts;
+    LongOption[$vacount / 3] longopts;
 
     var $dyn_opt_str = "";   // dynamic option_str
     var $ct_argstype = (OptionArgType[$vacount / 3]){};   // indexing for OptionArgType
@@ -567,8 +579,8 @@ macro int? @parse(#args, ...)
         $endif
 
         // The third param MUST be a pointer/reference or function type.
-        var $kind_of_arg = $typeof($vaarg[$argidx + 2]).kindof;
-        $assert $kind_of_arg == TypeKind.POINTER || $kind_of_arg == TypeKind.FUNC
+        var $kind_of_arg = @typekind($vaarg[$argidx + 2]);
+        $assert @in($kind_of_arg, { POINTER, FUNC })
             : "The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a pointer or function type.";
 
         var $has_arg = OptionArgType.NO_ARGUMENT;   // default
@@ -587,9 +599,9 @@ macro int? @parse(#args, ...)
                 $case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+') :
                     $has_arg = OptionArgType.INCREMENTAL;
 
-                    $assert ($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
+                    $assert $defined(*$vaarg[$argidx + 2]) &&& types::is_int($typeof(*$vaarg[$argidx + 2]))//($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
                         : "Incremental option '" +++ ($shortname.len > 0 ? $shortname : $longname) +++
-                            "' must be of type 'uint*' (but got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
+                            "' must be a pointer to an integer type (but got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
 
                 // ... or a callback. Callback types DO accept a string argument to pass to themselves.
                 $case $kind_of_arg == TypeKind.FUNC :

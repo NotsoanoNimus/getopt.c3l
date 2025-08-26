@@ -11,6 +11,18 @@ import std::io;
 
 faultdef TEST_FAILURE;
 
+<*
+ @require @typeis(left, $typeof(right))
+*>
+macro bool struct_cmp(left, right)
+{
+    $foreach $member : $typeof(left).membersof:
+        $assert $defined($member.get(left) != $member.get(right)) : "All struct members must support the == operator";
+        if ($member.get(left) != $member.get(right)) return false;
+    $endforeach
+    return true;
+}
+
 struct TestResult (Printable)
 {
     bool has_alpha;
@@ -37,14 +49,7 @@ fn void? get_india_value(String arg)
 }
 
 
-fn bool TestResult.eq(&self, TestResult other) @operator(==)
-{
-    $foreach $member : TestResult.membersof :
-        if (self.$eval($member.nameof) != other.$eval($member.nameof)) return false;
-    $endforeach
-
-    return true;
-}
+fn bool TestResult.eq(self, TestResult other) @operator(==) => struct_cmp(self, other);
 
 fn usz? TestResult.to_format(&self, Formatter* f) @dynamic
     => f.printf(
