@@ -538,9 +538,9 @@ macro int? @parse(#args, ...)
     // Used for sequentially filling array args for repeating options.
     //   256 of these because that's the width of one shortname, which is how the indices themselves are indexed.
     static ushort[256] array_storage_indexes;
-    var $dyn_shortname = { 0x80, 0 };   // dynamic shortname values start at 0x80 for longopts w/o shortopt chars
+    char $dyn_shortname = 0x80;   // dynamic shortname values start at 0x80 for longopts w/o shortopt chars
 
-    // Set up a dynamically filled longopts.
+    // Set up a dynamically-filled runtime longopts.
     LongOption[$vacount / 3] longopts;
 
     var $dyn_opt_str = "";   // dynamic option_str
@@ -549,59 +549,48 @@ macro int? @parse(#args, ...)
     var $ct_shortnames = (char[$vacount / 3]){};   // indexing for shortnames
 
     // Iterate each provided triplet and build up all compile-time indices with accurate information.
-    $for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3 :
+    $for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3:
     { // scoped to avoid redeclarations of 'assignee' at runtime
         var $shortname = $vaconst[$argidx];
         var $longname = $vaconst[$argidx + 1];
         var assignee = $vaarg[$argidx + 2];
 
-        $assert $longname.len > 0 ||| $shortname.len > 0
-            : "You must specify at least a short or a long name for each option.";
+        $assert $longname.len > 0 ||| $shortname.len > 0 : "You must specify at least a short or a long name for each option.";
 
-        $if $shortname.len > 0 :
+        $if $shortname.len > 0:
             $assert ($shortname[0] >= 'a' &&& $shortname[0] <= 'z')
                 ||| ($shortname[0] >= 'A' &&& $shortname[0] <= 'Z')
                 ||| ($shortname[0] >= '0' &&& $shortname[0] <= '9')
                     : `Short-name options should match the following regular expression: [a-zA-Z0-9][\+\?]?`;
-
             $dyn_opt_str = $dyn_opt_str +++ $shortname[0];   // concat shortname onto dynamic option_str
         $endif
 
-        // Before proceeding to the monolith below, make sure the person providing options isn't trying to be cheeky.
-        $if $longname.len > 0 &&& $shortname.len > 0 :
-            $if @in($longname[^1], { '+', '?' }) &&& @in($shortname[^1], { '+', '?' }):
-                $error "You can't have argument type specifiers (? or +) on both the short and long option names.";
-            $endif
+        // If both names are set, only ONE of them may have an argument type specifier.
+        $if $defined($longname[^1], $shortname[^1]) &&& @in($longname[^1], { '+', '?' }) &&& @in($shortname[^1], { '+', '?' }):
+            $error "You can't have argument type specifiers (? or +) on both the short and long option names.";
         $endif
-
-        //     $if $shortname[^1] == '+' ||| $shortname[^1] == '?' :
-        //         $assert $longname[^1] != '+' &&& $longname[^1] != '?'
-        //             : "You can't have argument type specifiers (? or +) on both the short and long option names.";
-        //     $endif
-        // $endif
 
         // The third param MUST be a pointer/reference or function type.
         var $kind_of_arg = @typekind(assignee);
         $assert @in($kind_of_arg, { POINTER, FUNC }) : "The parameter reference " +++ $typeof(assignee).nameof +++ " is not a pointer or function type.";
 
         OptionArgType $has_arg = NO_ARGUMENT;   // default
-        // Only 'bool*' types represent flags, which do not have arguments.
-        $if $kind_of_arg == TypeKind.FUNC ||| ! types::is_bool($typeof(assignee).inner) :
-            $switch :
+        $if $kind_of_arg == FUNC ||| ! types::is_bool($typeof(assignee).inner): // Only 'bool*' types represent flags, which do not have arguments.
+            $switch:
             $case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?'): $has_arg = OPTIONAL_ARGUMENT;
             $case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+'): $has_arg = INCREMENTAL;   // incremental types do not accept arguments
-            $case $kind_of_arg == TypeKind.FUNC : $has_arg = CALLBACK;
+            $case $kind_of_arg == FUNC: $has_arg = CALLBACK;
             $default: $has_arg = REQUIRED_ARGUMENT;
             $endswitch
 
             $if $has_arg == INCREMENTAL:
-                $assert $defined(*assignee) &&& types::is_int($typeof(*assignee))//($typeof(assignee).nameof == (uint*).typeid.nameof)
-                    : "Incremental option '" +++ ($shortname.len > 0 ? $shortname : $longname) +++
-                        "' must be a pointer to an integer type (but got '" +++ $typeof(assignee).nameof +++ "' instead).";
+                $assert $defined(*assignee) &&& types::is_int($typeof(*assignee))
+                    : @sprintf("Incremental option '%s' must be a pointer to an integer type, but got '%s' instead",
+                        $shortname[^1] == '+' ? $shortname : $longname, $typeof(assignee).nameof);
             $endif
 
-            $if $shortname.len > 0 :
-                $switch $has_arg :
+            $if $shortname.len > 0:
+                $switch $has_arg:
                 $case OPTIONAL_ARGUMENT: $dyn_opt_str = $dyn_opt_str +++ "::";
                 $case REQUIRED_ARGUMENT:
                 $case CALLBACK: $dyn_opt_str = $dyn_opt_str +++ ":";
@@ -611,39 +600,33 @@ macro int? @parse(#args, ...)
 
         // But also track the runtime longopts details. This means removing INCREMENTAL and CALLBACK from the equation,
         //   since they're not runtime argtype values according to getopts.
-        OptionArgType $has_arg_runtime = $has_arg == INCREMENTAL
-            ? NO_ARGUMENT
-            : ($has_arg == CALLBACK ? REQUIRED_ARGUMENT : $has_arg);
+        OptionArgType $has_arg_runtime = $has_arg;
+        $switch $has_arg:
+        $case INCREMENTAL: $has_arg_runtime = NO_ARGUMENT;
+        $case CALLBACK: $has_arg_runtime = REQUIRED_ARGUMENT;
+        $endswitch
 
         // Update 'longname' to remove possible suffix.
-        $if $longname.len > 0 &&& ($longname[^1] == '?' ||| $longname[^1] == '+'):
-            $longname = $longname[..^2];
-        $endif
+        $longname = @select($defined($longname[^1]) &&& @in($longname[^1], { '?', '+' }), $longname[..^2], $longname);
+
+        longname[$idx] = { $longname }
 
         $if $shortname.len > 0 :
             longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
         $else
-            longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($dyn_shortname[0]) };
-            ++$dyn_shortname[0];   // next dyn_shortname
+            longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($dyn_shortname) };
+            ++$dyn_shortname;   // next dyn_shortname
         $endif
 
         // Track the arg type in CT variables.
         $ct_argstype[$idx] = $has_arg;
         $ct_longnames[$idx] = $longname;
-        $if $shortname.len > 0 :
-            $ct_shortnames[$idx] = $shortname[0];
-        $else
-            $ct_shortnames[$idx] = ($dyn_shortname[0] - 1);
-        $endif
+        $ct_shortnames[$idx] = @select($shortname.len > 0, $shortname[0], $dyn_shortname - 1);
 
         // Quickly check for duplicate short/long option names.
         $for var $a = 0; $a < $idx; ++$a :
-            $assert !$ct_longnames[$a].len ||| $ct_longnames[$a] != $longname
-                : "Duplicate long option name '" +++ $ct_longnames[$a] +++ "' is not allowed.";
-
-            // $assert ($ct_shortnames[$a] == ($dyn_shortname[0] - 1)) ||| ($ct_shortnames[$a] != $shortname[0])
-            $assert $ct_shortnames[$a] != $ct_shortnames[$idx]
-                : "Duplicate short option character '" +++ $ct_shortnames[$a] +++ "' is not allowed.";
+            $assert !$ct_longnames[$a].len ||| $ct_longnames[$a] != $longname : "Duplicate long option name '" +++ $ct_longnames[$a] +++ "' is not allowed.";
+            $assert $ct_shortnames[$a] != $ct_shortnames[$idx] : "Duplicate short option character '" +++ $ct_shortnames[$a] +++ "' is not allowed.";
         $endfor
     }
     $endfor
