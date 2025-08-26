@@ -583,53 +583,44 @@ macro int? @parse(#args, ...)
         $assert @in($kind_of_arg, { POINTER, FUNC })
             : "The parameter reference " +++ $typeof($vaarg[$argidx + 2]).nameof +++ " is not a pointer or function type.";
 
-        var $has_arg = OptionArgType.NO_ARGUMENT;   // default
+        OptionArgType $has_arg = NO_ARGUMENT;   // default
 
         // Only 'bool*' types represent flags, which do not have arguments.
         $if $kind_of_arg == TypeKind.FUNC ||| ! types::is_bool(($typeof($vaarg[$argidx + 2])).inner) :
             $switch :
-                // Furthermore, for non-flags which have arguments, they might be optional.
-                $case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?') :
-                    $has_arg = OptionArgType.OPTIONAL_ARGUMENT;
-                    $if ($shortname.len > 0) :   // only append to the dynamic opt_str when a shortname is set explicitly
-                        $dyn_opt_str = $dyn_opt_str +++ "::";
-                    $endif
-
-                // ... or incremental. Incremental argument types do not accept arguments.
-                $case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+') :
-                    $has_arg = OptionArgType.INCREMENTAL;
-
-                    $assert $defined(*$vaarg[$argidx + 2]) &&& types::is_int($typeof(*$vaarg[$argidx + 2]))//($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
-                        : "Incremental option '" +++ ($shortname.len > 0 ? $shortname : $longname) +++
-                            "' must be a pointer to an integer type (but got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
-
-                // ... or a callback. Callback types DO accept a string argument to pass to themselves.
-                $case $kind_of_arg == TypeKind.FUNC :
-                    $has_arg = OptionArgType.CALLBACK;
-                    $if ($shortname.len > 0) :   // only append to the dynamic opt_str when a shortname is set explicitly
-                        $dyn_opt_str = $dyn_opt_str +++ ":";
-                    $endif
-                    // no $nextcase exists, or this would flow better
-
-                $default :
-                    $has_arg = OptionArgType.REQUIRED_ARGUMENT;
-                    $if ($shortname.len > 0) :   // only append to the dynamic opt_str when a shortname is set explicitly
-                        $dyn_opt_str = $dyn_opt_str +++ ":";
-                    $endif
+            $case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?'): $has_arg = OPTIONAL_ARGUMENT;
+            $case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+'): $has_arg = INCREMENTAL;   // incremental types do not accept arguments
+            $case $kind_of_arg == TypeKind.FUNC : $has_arg = CALLBACK;
+            $default: $has_arg = REQUIRED_ARGUMENT;
             $endswitch
+
+            $if $has_arg == INCREMENTAL:
+                $assert $defined(*$vaarg[$argidx + 2]) &&& types::is_int($typeof(*$vaarg[$argidx + 2]))//($typeof($vaarg[$argidx + 2]).nameof == (uint*).typeid.nameof)
+                    : "Incremental option '" +++ ($shortname.len > 0 ? $shortname : $longname) +++
+                        "' must be a pointer to an integer type (but got '" +++ $typeof($vaarg[$argidx + 2]).nameof +++ "' instead).";
+            $endif
+
+            $if $shortname.len > 0 :
+                $switch $has_arg :
+                $case OPTIONAL_ARGUMENT: $dyn_opt_str = $dyn_opt_str +++ "::";
+                $case REQUIRED_ARGUMENT:
+                $case CALLBACK: $dyn_opt_str = $dyn_opt_str +++ ":";
+                $endswitch
+            $endif
         $endif
 
         // But also track the runtime longopts details. This means removing INCREMENTAL and CALLBACK from the equation,
         //   since they're not runtime argtype values according to getopts.
-        var $has_arg_runtime = $has_arg == OptionArgType.INCREMENTAL ? OptionArgType.NO_ARGUMENT
-            : ($has_arg == OptionArgType.CALLBACK ? OptionArgType.REQUIRED_ARGUMENT : $has_arg);
+        OptionArgType $has_arg_runtime = $has_arg == INCREMENTAL
+            ? NO_ARGUMENT
+            : ($has_arg == CALLBACK ? REQUIRED_ARGUMENT : $has_arg);
 
         // Update 'longname' to remove possible suffix.
-        $if ($longname.len > 0) &&& ($longname[^1] == '?' ||| $longname[^1] == '+'):
+        $if $longname.len > 0 &&& ($longname[^1] == '?' ||| $longname[^1] == '+'):
             $longname = $longname[..^2];
         $endif
 
-        $if $shortname.len :
+        $if $shortname.len > 0 :
             longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($shortname[0]) };
         $else
             longopts[$argidx / 3] = { $longname, $has_arg_runtime, null, (int)($dyn_shortname[0]) };
