@@ -12,7 +12,7 @@ import std::io;
 faultdef TEST_FAILURE;
 
 <*
- @require @typeis(left, $typeof(right))
+ @require $typeof(left) == $typeof(right)
 *>
 macro bool struct_cmp(left, right)
 {
@@ -21,6 +21,14 @@ macro bool struct_cmp(left, right)
         if ($member.get(left) != $member.get(right)) return false;
     $endforeach
     return true;
+}
+
+enum MedalType
+{
+    PLATINUM,
+    GOLD,
+    SILVER,
+    BRONZE,
 }
 
 struct TestResult (Printable)
@@ -36,6 +44,7 @@ struct TestResult (Printable)
     char india;
     int128 juliet;
     bool has_kilo;
+    MedalType lima;
 }
 
 TestResult t;
@@ -66,7 +75,7 @@ fn void fresh()
 }
 
 
-const OPTION_STR = "abc:d:e::fg:h:i:k";   // notice no 'juliet' here
+const OPTION_STR = "abc:d:e::fg:h:i:kl:";   // notice no 'juliet' here
 
 const LongOption[] LONGOPTS = {
     { "alpha",      NO_ARGUMENT,        null,   'a' },
@@ -80,6 +89,7 @@ const LongOption[] LONGOPTS = {
     { "india",      REQUIRED_ARGUMENT,  null,   'i' },
     { "juliet",     REQUIRED_ARGUMENT,  null,   'x' },   // ... but juliet is indicated by 'x'
     // notice no 'kilo' here -- short opt only
+    { "lima",       REQUIRED_ARGUMENT,  null,   'l' },
 };
 
 
@@ -96,7 +106,8 @@ fn int? parse_test(String[] args) =>
         "h" ,   "hotel",    &t.hotel,
         "i" ,   "india",    &get_india_value,
         ""  ,   "juliet",   &t.juliet,   // empty shortopt
-        "k"  ,  "",         &t.has_kilo,   // empty longopt
+        "k" ,   "",         &t.has_kilo,   // empty longopt
+        "l" ,   "lima",     &t.lima,
     )!;
 
 fn void? getopt_test(String[] args)
@@ -167,6 +178,10 @@ fn void? common_switch(int retval) @local
         case 'k':
             t.has_kilo = true;
             io::printn("(kilo)");
+
+        case 'l':
+            t.lima = enum_by_name(MedalType, opt::arg)!;
+            io::printfn("(lima)");
     }
 }
 
@@ -246,18 +261,18 @@ macro void? @run(CallType $test_type, #args, #expected, fault expected_fault = N
 
 fn void sanity_check_result_comparisons()
 {
-    TestResult left = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
+    TestResult left = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true, GOLD };
 
-    TestResult right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "___", "xyz" }, 'w', 123412341234123412341234, true };
+    TestResult right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "___", "xyz" }, 'w', 123412341234123412341234, true, GOLD };
     test::@check(left != right);
 
-    right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
+    right = { true, true, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true, GOLD };
     test::@check(left == right);
 
-    right = { true, false, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
+    right = { true, false, 123, 0.012312, "zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true, GOLD };
     test::@check(left != right);
 
-    right = { true, true, 123, 0.012312, "a zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true };
+    right = { true, true, 123, 0.012312, "a zstr", 90, {'a', 'x', 'd' }, { "str", "123", "xyz" }, 'w', 123412341234123412341234, true, GOLD };
     test::@check(left != right);
 }
 
@@ -267,8 +282,8 @@ fn void simple_all()
     @run_each({ "-b" }, { .has_bravo = true })!!;
     test::@check(opt::ind == 2, "opt::ind must equal the length of the args slice +1 when all values are consumed.");   // only need to check this a few times
 
-    @run_each({ "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
-    test::@check(opt::ind == 4, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
+    @run_each({ "-a", "-c", "1234", "-l", "BRONZE" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234, .lima = BRONZE })!!;
+    test::@check(opt::ind == 6, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
     @run_each({ "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
     test::@check(opt::ind == 3, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
     @run_each({ "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;

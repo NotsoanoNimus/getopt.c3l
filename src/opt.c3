@@ -522,20 +522,28 @@ macro @enable_errors() => err = 1;
 
 
 <*
- @require $defined($typefrom($typeof(#value).typeid)[] $arr = #arr)
+ @require $defined($typeof(#value)[] $arr = #arr)
 *>
 macro bool @in(#value, #arr) @const
 {
-    $typefrom($typeof(#value).typeid)[] $arr = #arr;
+    $typeof(#value)[] $arr = #arr;
     $foreach $val : $arr :
         $if #value == $val: return true; $endif
     $endforeach
     return false;
 }
 
+macro bool @typein($Type, typeid[] $list) @const
+{
+    $foreach $v : $list:
+        $if $Type.typeid == $v: return true; $endif
+    $endforeach
+    return false;
+}
+
 
 <*
- @require @typeis(#args, String[]) ||| @typeis(#args, String[*])
+ @require @typein($typeof(#args), { String[] })
 *>
 macro int? @parse(#args, ...)
 {
@@ -580,7 +588,7 @@ macro int? @parse(#args, ...)
         $endif
 
         // The third param MUST be a pointer/reference or function type.
-        var $kind_of_arg = @typekind(assignee);
+        var $kind_of_arg = $kindof(assignee);
         $assert @in($kind_of_arg, { POINTER, FUNC }) : "The parameter reference " +++ $typeof(assignee).nameof +++ " is not a pointer or function type.";
 
         OptionArgType $has_arg = NO_ARGUMENT;   // default
@@ -616,14 +624,14 @@ macro int? @parse(#args, ...)
         $endswitch
 
         // Update 'longname' to remove possible suffix.
-        $longname = @select($defined($longname[^1]) &&& @in($longname[^1], { '?', '+' }), $longname[..^2], $longname);
+        $longname = ($defined($longname[^1]) &&& @in($longname[^1], { '?', '+' })) ??? $longname[..^2] : $longname;
 
-        longopts[$idx] = { $longname, $has_arg_runtime, null, (int)(@select($shortname.len > 0, $shortname[0], $dyn_shortname++)) };
+        longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($shortname.len > 0 ??? $shortname[0] : $dyn_shortname++) };
 
         // Track the arg type in CT variables.
         $ct_argstype[$idx] = $has_arg;
         $ct_longnames[$idx] = $longname;
-        $ct_shortnames[$idx] = @select($shortname.len > 0, $shortname[0], $dyn_shortname - 1);
+        $ct_shortnames[$idx] = $shortname.len > 0 ??? $shortname[0] : $dyn_shortname - 1;
 
         // Quickly check for duplicate short/long option names.
         $for var $a = 0; $a < $idx; ++$a :
@@ -675,7 +683,7 @@ macro int? @parse(#args, ...)
                             return MISSING_ARGUMENT?;   // required arg? throw
                         }
 
-                        $assert @typekind(assignee) == POINTER &&& $defined($typeof(assignee).inner)
+                        $assert $kindof(assignee) == POINTER &&& $defined($typeof(assignee).inner)
                             : "The assignee must be a pointer type and must have an '.inner' property";
 
                         // Set the passed pointer's value.
@@ -699,6 +707,23 @@ macro int? @parse(#args, ...)
 
                             (*assignee)[current_index] = ($DerefArgType)@derive_arg_value(
                                 arg, $DerefArgType.typeid, $DerefArgType.typeid, $ArgType.typeid);
+
+                        $case ENUM:
+                            int ordinal;
+                            if (catch @try(ordinal, arg.to_integer(int)))
+                            {
+                                $DerefArgType enum_val;
+                                if (catch @try(enum_val, enum_by_name($DerefArgType, arg)))
+                                {
+                                    io::eprintf("Exception caught while converting argument to enum type %s.", $DerefArgType.nameof);
+                                    abort("Unable to convert argument to the enum type.");
+                                }
+                                *assignee = enum_val;
+                            }
+                            else
+                            {
+                                *assignee = $DerefArgType.from_ordinal(ordinal);
+                            }
 
                         $default:   // in the default case, we let the language allow/disallow the assignment
                             *assignee = ($SingleDerefArgType)@derive_arg_value(
