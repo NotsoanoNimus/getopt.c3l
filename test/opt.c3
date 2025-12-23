@@ -88,7 +88,7 @@ fn usz? TestResult.to_format(&self, Formatter* f) @dynamic
 
 fn void fresh()
 {
-	opt::@reset();
+	opt::reset();
 	t = {};
 	longopt_index = golf_index = hotel_index = 0;
 }

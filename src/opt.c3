@@ -518,7 +518,7 @@ faultdef
 <*
 Reset all 'static' option state values to their initial states. Does not reset the option prefix.
 *>
-macro @reset()
+macro reset()
 {
 	err = ind = 1;
 	opt = reset = 0;
@@ -661,7 +661,7 @@ macro int? @parse(#args, ...)
 	$endfor
 
 	// Reset any previous options parsing that might have been done.
-	opt::@reset();
+	opt::reset();
 
 	// This macro wraps a `getopt_long` call.
 	int longopt_index;
