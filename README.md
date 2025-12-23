@@ -15,7 +15,7 @@ You now have 4 functions to choose from for parsing command-line options:
 ## "C3 Spice"? wat
 Enter the compile-time `opt::@parse` macro, inspired by [D-lang's std.getopt module](https://dlang.org/phobos/std_getopt.html), but not exactly the same.
 
-```c
+```c3
 macro void? opt::@parse(#args, ...);
 ```
 
@@ -26,7 +26,7 @@ Provide a `String[]` slice of command-line arguments as the first parameter, the
 
 There must be at least one of the two names for any option definition.
 
-```c
+```c3
 bool has_short_name;
 String optional_val;
 uint ctr;
@@ -42,7 +42,7 @@ if (catch opt::@parse(
 ## Examples
 The below usage examples reference/populate this struct:
 
-```c
+```c3
 struct ArgsResult
 {
     bool        has_alpha;
@@ -64,7 +64,7 @@ ArgsResult t;
 ### C3-style `opt::@parse`
 For your convenience. :tm:
 
-```c
+```c3
 int end_index = opt::@parse(
     args,
     "a" ,   "alpha",    &t.has_alpha,
@@ -90,7 +90,7 @@ Return:  6   // indexof("--") + 1 - the would-be index of the first value after 
 ### opt::get
 Short options only.
 
-```c
+```c3
 // intentionally leaves out 'juliet' which, following the example, is supposed to a longopt ONLY
 int retval;
 while (-1 != (retval = opt::get(args, "abc:d:e::fg:h:i:k"))) {
@@ -126,7 +126,7 @@ Return:  6   // args.len
 ### opt::get_long & opt::get_long_only
 Long options, or long options with POSIX support (`--longopt` + `-longopt`). These are used the exact same way, so only `getopt_long` is shown.
 
-```c
+```c3
 // intentionally leaves out 'kilo' which, following the example, is supposed to a SHORT option ONLY
 int retval, longopt_idx;
 LongOption[] longopts = {
