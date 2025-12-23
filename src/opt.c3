@@ -43,6 +43,7 @@ import std::io, std::math;
 const AsciiCharset ALPHA_UPPER_SET = ascii::@create_set("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
 const AsciiCharset ALPHA_LOWER_SET = ascii::@create_set("abcdefghijklmnopqrstuvwxyz");
 const AsciiCharset ALPHA_SET = (AsciiCharset)((uint128)ALPHA_UPPER_SET | (uint128)ALPHA_LOWER_SET);
+const AsciiCharset ALPHANUMERIC_SET = (AsciiCharset)((uint128)ALPHA_SET | (uint128)ascii::NUMBER_SET);
 
 macro bool @charset_contains(AsciiCharset $set, char $c) @const
 	=> !!($c < 128) & !!($set & (AsciiCharset)(1ULL << $c));
@@ -575,16 +576,27 @@ macro int? @parse(#args, ...)
 		// Let 'null' values converge to empty strings here.
 		String $shortname = $typeof($vaconst[$argidx]) == void* &&& $vaconst[$argidx] == null ??? "" : $vaconst[$argidx];
 		String $longname = $typeof($vaconst[$argidx + 1]) == void* &&& $vaconst[$argidx + 1] == null ??? "" : $vaconst[$argidx + 1];
-		var assignee = $vaarg[$argidx + 2];
+		var assignee = $vaexpr[$argidx + 2];
 
 		$assert $longname.len > 0 ||| $shortname.len > 0
 			: "You must specify at least a short or a long name for each option.";
 
 		// The shortname should only ever be alphanumeric. This could change at a later time.
+		$assert $shortname.len <= 2
+			: @sprintf("Short-name `%s` is too long. You can only use one character and an optional argument type specifier ('?' or '+').", $shortname);
 		$if $shortname.len > 0:
-			$assert @charset_contains(ALPHA_SET, $shortname[0]) ||| @charset_contains(ascii::NUMBER_SET, $shortname[0])
+			$assert @charset_contains(ALPHANUMERIC_SET, $shortname[0])
 				: `Short-name options should match the following regular expression: [a-zA-Z0-9][\+\?]?`;
-			$dyn_opt_str = $dyn_opt_str +++ $shortname[0];   // concat shortname onto dynamic option_str
+			$dyn_opt_str +++= $shortname[0];   // concat shortname onto dynamic option_str
+		$endif
+
+		$assert $longname.len == 0 ||| $longname.len > 1
+			: @sprintf("Long-name `%s` is too short. Long names must be longer than a single character.", $longname);
+		$if $longname.len > 0:
+			$foreach $_c : $longname[..^2] :
+				$assert @charset_contains(ALPHANUMERIC_SET, $_c) ||| $_c == '-' ||| $_c == '_'
+					: @sprintf("Long-name `%s` contains invalid characters. Only alphanumeric characters, '-', and '_' are permitted", $longname);
+			$endforeach
 		$endif
 
 		// If both names are set, only ONE of them may have an argument type specifier.
@@ -593,45 +605,51 @@ macro int? @parse(#args, ...)
 		$endif
 
 		// The third param MUST be a pointer/reference or function type.
-		var $kind_of_arg = $kindof(assignee);
-		$assert @in($kind_of_arg, POINTER, FUNC) : "The parameter reference " +++ $typeof(assignee).nameof +++ " is not a pointer or function type.";
+		$assert @in($kindof(assignee), POINTER, FUNC)
+			: @sprintf("Assigned parameter from args triple #%s: type `%s` is not a pointer or function type.", $idx + 1, $typeof(assignee).nameof);
 
 		OptionArgType $has_arg = NO_ARGUMENT;   // default
-		$if $kind_of_arg == FUNC ||| ! types::is_bool($typeof(assignee).inner): // Only 'bool*' types represent flags, which do not have arguments.
+		$if $kindof(assignee) == FUNC ||| ! types::is_bool($typeof(assignee).inner): // Only 'bool*' types represent flags, which do not have arguments.
 			$switch:
-			$case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?'): $has_arg = OPTIONAL_ARGUMENT;
-			$case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+'): $has_arg = INCREMENTAL;   // incremental types do not accept arguments
-			$case $kind_of_arg == FUNC: $has_arg = CALLBACK;
-			$default: $has_arg = REQUIRED_ARGUMENT;
+				$case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?'): $has_arg = OPTIONAL_ARGUMENT;
+				$case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+'): $has_arg = INCREMENTAL;   // incremental types do not accept arguments
+				$case $kindof(assignee) == FUNC: $has_arg = CALLBACK;
+				$default: $has_arg = REQUIRED_ARGUMENT;
 			$endswitch
 
 			$if $has_arg == INCREMENTAL:
-				$assert $defined(*assignee) &&& types::is_int($typeof(*assignee))
-					: @sprintf("Incremental option '%s' must be a pointer to an integer type, but got '%s' instead",
+				$assert $defined(*assignee) &&& $defined((*assignee)++)
+					: @sprintf("Incremental option '%s' must be a pointer to an incrementable (++ capable) type, but got '%s' instead",
 						$shortname[^1] == '+' ? $shortname : $longname, $typeof(assignee).nameof);
 			$endif
 
-			$if $shortname.len > 0:
+			$if $shortname.len > 0:   // only do this when building a dynamic shortopts string
 				$switch $has_arg:
-				$case OPTIONAL_ARGUMENT: $dyn_opt_str = $dyn_opt_str +++ "::";
-				$case REQUIRED_ARGUMENT:
-				$case CALLBACK: $dyn_opt_str = $dyn_opt_str +++ ":";
+					$case OPTIONAL_ARGUMENT:
+						$dyn_opt_str +++= "::";
+					$case REQUIRED_ARGUMENT:
+					$case CALLBACK:
+						$dyn_opt_str +++= ":";
 				$endswitch
 			$endif
 		$endif
 
-		// But also track the runtime longopts details. This means removing INCREMENTAL and CALLBACK from the equation,
+		// Also track the runtime longopts details. This means removing INCREMENTAL and CALLBACK from the equation,
 		//   since they're not runtime argtype values according to getopts.
 		OptionArgType $has_arg_runtime = $has_arg;
 		$switch $has_arg:
-		$case INCREMENTAL: $has_arg_runtime = NO_ARGUMENT;
-		$case CALLBACK: $has_arg_runtime = REQUIRED_ARGUMENT;
+			$case INCREMENTAL: $has_arg_runtime = NO_ARGUMENT;   // incrementals don't accept args
+			$case CALLBACK: $has_arg_runtime = REQUIRED_ARGUMENT;   // callbacks must have a parameter to pass through
 		$endswitch
 
-		// Update 'longname' to remove possible suffix.
+		// Update 'longname' to remove possible suffix, then create a runtime longopt object.
 		$longname = ($defined($longname[^1]) &&& @in($longname[^1], '?', '+')) ??? $longname[..^2] : $longname;
-
-		longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($shortname.len > 0 ??? $shortname[0] : $dyn_shortname++) };
+		longopts[$idx] = {
+			.name = $longname,
+			.has_arg = $has_arg_runtime,
+			.flag = null,
+			.val = (int)($shortname.len > 0 ??? $shortname[0] : $dyn_shortname++)
+		};
 
 		// Track the arg type in CT variables.
 		$ct_argstype[$idx] = $has_arg;
@@ -640,13 +658,17 @@ macro int? @parse(#args, ...)
 
 		// Quickly check for duplicate short/long option names.
 		$for var $a = 0; $a < $idx; ++$a :
-			$assert !$ct_longnames[$a].len ||| $ct_longnames[$a] != $longname : "Duplicate long option name '" +++ $ct_longnames[$a] +++ "' is not allowed.";
-			$assert $ct_shortnames[$a] != $ct_shortnames[$idx] : "Duplicate short option character '" +++ $ct_shortnames[$a] +++ "' is not allowed.";
+			$assert !$ct_longnames[$a].len ||| $ct_longnames[$a] != $longname
+				: @sprintf("Duplicate long option name `%s` is not allowed.", $ct_longnames[$idx]);
+			$assert $ct_shortnames[$a] != $ct_shortnames[$idx]
+				: @sprintf("Duplicate short option character `%s` is not allowed.", $ct_shortnames[$idx]);
 		$endfor
 	}
 	$endfor
 
 	// Reset any previous options parsing that might have been done.
+	//
+	// === This marks the switch to runtime goings on. ===
 	opt::@reset();
 
 	// This macro wraps a `getopt_long` call.
