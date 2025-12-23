@@ -124,8 +124,8 @@ fn int? parse_test(String[] args) =>
 		"g" ,   "golf",     &t.golf,
 		"h" ,   "hotel",    &t.hotel,
 		"i" ,   "india",    &get_india_value,
-		""  ,   "juliet",   &t.juliet,   // empty shortopt
-		"k" ,   "",         &t.has_kilo,   // empty longopt
+		null,   "juliet",   &t.juliet,   // empty shortopt
+		"k" ,   null,       &t.has_kilo,   // empty longopt
 		"l" ,   "lima",     &t.lima,
 	)!;
 

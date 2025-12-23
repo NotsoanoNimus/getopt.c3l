@@ -566,8 +566,8 @@ macro int? @parse(#args, ...)
 	// Iterate each provided triplet and build up all compile-time indices with accurate information.
 	$for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3:
 	{ // scoped to avoid redeclarations of 'assignee' at runtime
-		String $shortname = $vaconst[$argidx];
-		String $longname = $vaconst[$argidx + 1];
+		String $shortname = $typeof($vaconst[$argidx]) == void* &&& $vaconst[$argidx] == null ??? "" : $vaconst[$argidx];
+		String $longname = $typeof($vaconst[$argidx + 1]) == void* &&& $vaconst[$argidx + 1] == null ??? "" : $vaconst[$argidx + 1];
 		var assignee = $vaarg[$argidx + 2];
 
 		$assert $longname.len > 0 ||| $shortname.len > 0 : "You must specify at least a short or a long name for each option.";
