@@ -38,8 +38,14 @@ module opt;
 
 import libc;
 
-import std::io;
-import std::math;
+import std::io, std::math;
+
+const AsciiCharset ALPHA_UPPER_SET = ascii::@create_set("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+const AsciiCharset ALPHA_LOWER_SET = ascii::@create_set("abcdefghijklmnopqrstuvwxyz");
+const AsciiCharset ALPHA_SET = (AsciiCharset)((uint128)ALPHA_UPPER_SET | (uint128)ALPHA_LOWER_SET);
+
+macro bool @charset_contains(AsciiCharset $set, char $c) @const
+	=> !!($c < 128) & !!($set & (AsciiCharset)(1ULL << $c));
 
 
 const BAD_CHAR = '?';
@@ -566,17 +572,18 @@ macro int? @parse(#args, ...)
 	// Iterate each provided triplet and build up all compile-time indices with accurate information.
 	$for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3:
 	{ // scoped to avoid redeclarations of 'assignee' at runtime
+		// Let 'null' values converge to empty strings here.
 		String $shortname = $typeof($vaconst[$argidx]) == void* &&& $vaconst[$argidx] == null ??? "" : $vaconst[$argidx];
 		String $longname = $typeof($vaconst[$argidx + 1]) == void* &&& $vaconst[$argidx + 1] == null ??? "" : $vaconst[$argidx + 1];
 		var assignee = $vaarg[$argidx + 2];
 
-		$assert $longname.len > 0 ||| $shortname.len > 0 : "You must specify at least a short or a long name for each option.";
+		$assert $longname.len > 0 ||| $shortname.len > 0
+			: "You must specify at least a short or a long name for each option.";
 
+		// The shortname should only ever be alphanumeric. This could change at a later time.
 		$if $shortname.len > 0:
-			$assert ($shortname[0] >= 'a' &&& $shortname[0] <= 'z')
-				||| ($shortname[0] >= 'A' &&& $shortname[0] <= 'Z')
-				||| ($shortname[0] >= '0' &&& $shortname[0] <= '9')
-					: `Short-name options should match the following regular expression: [a-zA-Z0-9][\+\?]?`;
+			$assert @charset_contains(ALPHA_SET, $shortname[0]) ||| @charset_contains(ascii::NUMBER_SET, $shortname[0])
+				: `Short-name options should match the following regular expression: [a-zA-Z0-9][\+\?]?`;
 			$dyn_opt_str = $dyn_opt_str +++ $shortname[0];   // concat shortname onto dynamic option_str
 		$endif
 
