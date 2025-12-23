@@ -20,9 +20,9 @@ macro void? opt::@parse(#args, ...);
 ```
 
 Provide a `String[]` slice of command-line arguments as the first parameter, then variadic arguments must come in sets of 3 at a time for each defined option (this is checked at compile-time):
-- An _optional_ short-name value (or `""`).
-- An _optional_ long-name value (or `""`).
-- A _required_ reference to a variable or arg-parsing callback (w/ signature `fn void? (String)`).
+- An _optional_ short-name value (or `""` or `null`).
+- An _optional_ long-name value (or `""` or `null`).
+- A _required_ reference to a properly-typed variable or an arg-parsing callback with the signature `fn void? (String)`.
 
 There must be at least one of the two names for any option definition.
 
@@ -32,10 +32,10 @@ String optional_val;
 uint ctr;
 
 if (catch opt::@parse(
-    args,
-    "s", "short-name", &has_short_name,
-    "o?", "optional", &optional_val,
-    "" , "counter+", &ctr,
+	args,
+	"s", "short-name", &has_short_name,
+	"o?", "optional", &optional_val,
+	null , "counter+", &ctr,
 )) show_help();
 ```
 
@@ -45,17 +45,17 @@ The below usage examples reference/populate this struct:
 ```c3
 struct ArgsResult
 {
-    bool        has_alpha;
-    bool        has_bravo;
-    isz         charlie;
-    float       delta;
-    ZString     echo;
-    uint        fox;
-    char[3]     golf;
-    String[3]   hotel;
-    char        india;
-    int128      juliet;
-    bool        has_kilo;
+	bool        has_alpha;
+	bool        has_bravo;
+	isz         charlie;
+	float       delta;
+	ZString     echo;
+	uint        fox;
+	char[3]     golf;
+	String[3]   hotel;
+	char        india;
+	int128      juliet;
+	bool        has_kilo;
 }
 
 ArgsResult t;
@@ -66,18 +66,18 @@ For your convenience. :tm:
 
 ```c3
 int end_index = opt::@parse(
-    args,
-    "a" ,   "alpha",    &t.has_alpha,
-    "b" ,   "bravo",    &t.has_bravo,
-    "c" ,   "charlie",  &t.charlie,
-    "d" ,   "delta",    &t.delta,
-    "e?",   "echo",     &t.echo,   // '?' means 'optional argument'
-    "f" ,   "fox+",     &t.fox,   // '+' means 'incremental argument' (val++ each time flag is seen)
-    "g" ,   "golf",     &t.golf,
-    "h" ,   "hotel",    &t.hotel,
-    "i" ,   "india",    &get_india_value,   // callback
-    ""  ,   "juliet",   &t.juliet,   // empty shortopt
-    "k"  ,  "",         &t.has_kilo,   // empty longopt
+	args,
+	"a" ,   "alpha",    &t.has_alpha,
+	"b" ,   "bravo",    &t.has_bravo,
+	"c" ,   "charlie",  &t.charlie,
+	"d" ,   "delta",    &t.delta,
+	"e?",   "echo",     &t.echo,   // '?' means 'optional argument'
+	"f" ,   "fox+",     &t.fox,   // '+' means 'incremental argument' (val++ each time flag is seen)
+	"g" ,   "golf",     &t.golf,
+	"h" ,   "hotel",    &t.hotel,
+	"i" ,   "india",    &get_india_value,   // callback
+	""  ,   "juliet",   &t.juliet,   // empty shortopt
+	"k"  ,  "",         &t.has_kilo,   // empty longopt
 )!;
 ```
 
@@ -94,26 +94,26 @@ Short options only.
 // intentionally leaves out 'juliet' which, following the example, is supposed to a longopt ONLY
 int retval;
 while (-1 != (retval = opt::get(args, "abc:d:e::fg:h:i:k"))) {
-    switch (retval) {
-        case ':': // fallthrough
-        case '?': help(); /* or return a fault */
-        case 'a': t.has_alpha = true;
-        case 'b': t.has_bravo = true;
-        case 'c': t.charlie = opt::arg.to_integer(isz.typeid)!;
-        case 'd': t.delta = opt::arg.to_float()!;
-        case 'e': if (opt::arg.ptr != null) t.echo = (ZString)opt::arg.ptr;   // note: optional arg!
-        case 'f': ++t.fox;
-        case 'g':
-            if (golf_index >= t.golf.len) return opt::OUT_OF_BOUNDS?;
-            t.golf[golf_index++] = opt::arg[0];
-        case 'h':
-            if (hotel_index >= t.hotel.len) return opt::OUT_OF_BOUNDS?;
-            t.hotel[hotel_index++] = opt::arg;
-        // `get_india_value` just grabs the third character from the arg
-        case 'i': get_india_value(opt::arg)!;   // custom callback function to set t.india from arg
-        /* not listed */ case 'x': t.juliet = opt::arg.to_integer(int128.typeid)!;
-        case 'k': t.has_kilo = true;
-    }
+	switch (retval) {
+		case ':': // fallthrough
+		case '?': help(); /* or return a fault */
+		case 'a': t.has_alpha = true;
+		case 'b': t.has_bravo = true;
+		case 'c': t.charlie = opt::arg.to_integer(isz.typeid)!;
+		case 'd': t.delta = opt::arg.to_float()!;
+		case 'e': if (opt::arg.ptr != null) t.echo = (ZString)opt::arg.ptr;   // note: optional arg!
+		case 'f': ++t.fox;
+		case 'g':
+			if (golf_index >= t.golf.len) return opt::OUT_OF_BOUNDS?;
+			t.golf[golf_index++] = opt::arg[0];
+		case 'h':
+			if (hotel_index >= t.hotel.len) return opt::OUT_OF_BOUNDS?;
+			t.hotel[hotel_index++] = opt::arg;
+		// `get_india_value` just grabs the third character from the arg
+		case 'i': get_india_value(opt::arg)!;   // custom callback function to set t.india from arg
+		/* not listed */ case 'x': t.juliet = opt::arg.to_integer(int128.typeid)!;
+		case 'k': t.has_kilo = true;
+	}
 }
 ```
 
@@ -130,39 +130,39 @@ Long options, or long options with POSIX support (`--longopt` + `-longopt`). The
 // intentionally leaves out 'kilo' which, following the example, is supposed to a SHORT option ONLY
 int retval, longopt_idx;
 LongOption[] longopts = {
-    { "alpha",      NO_ARGUMENT,        null,   'a' },
-    { "bravo",      NO_ARGUMENT,        null,   'b' },
-    { "charlie",    REQUIRED_ARGUMENT,  null,   'c' },
-    { "delta",      REQUIRED_ARGUMENT,  null,   'd' },
-    { "echo",       OPTIONAL_ARGUMENT,  null,   'e' },
-    { "fox",        NO_ARGUMENT,        null,   'f' },
-    { "golf",       REQUIRED_ARGUMENT,  null,   'g' },
-    { "hotel",      REQUIRED_ARGUMENT,  null,   'h' },
-    { "india",      REQUIRED_ARGUMENT,  null,   'i' },
-    { "juliet",     REQUIRED_ARGUMENT,  null,   'x' },   // ... but juliet is indicated by 'x'
-    // notice no 'kilo' here -- short opt only
+	{ "alpha",      NO_ARGUMENT,        null,   'a' },
+	{ "bravo",      NO_ARGUMENT,        null,   'b' },
+	{ "charlie",    REQUIRED_ARGUMENT,  null,   'c' },
+	{ "delta",      REQUIRED_ARGUMENT,  null,   'd' },
+	{ "echo",       OPTIONAL_ARGUMENT,  null,   'e' },
+	{ "fox",        NO_ARGUMENT,        null,   'f' },
+	{ "golf",       REQUIRED_ARGUMENT,  null,   'g' },
+	{ "hotel",      REQUIRED_ARGUMENT,  null,   'h' },
+	{ "india",      REQUIRED_ARGUMENT,  null,   'i' },
+	{ "juliet",     REQUIRED_ARGUMENT,  null,   'x' },   // ... but juliet is indicated by 'x'
+	// notice no 'kilo' here -- short opt only
 };
 while (-1 != (retval = opt::get_long(args, "abc:d:e::fg:h:i:k", longopts, &longopt_idx))) {
-    switch (retval) {
-        case ':': // fallthrough
-        case '?': help(); /* or return a fault */
-        case 'a': t.has_alpha = true;
-        case 'b': t.has_bravo = true;
-        case 'c': t.charlie = opt::arg.to_integer(isz.typeid)!;
-        case 'd': t.delta = opt::arg.to_float()!;
-        case 'e': if (opt::arg.ptr != null) t.echo = (ZString)opt::arg.ptr;   // note: optional arg!
-        case 'f': ++t.fox;
-        case 'g':
-            if (golf_index >= t.golf.len) return opt::OUT_OF_BOUNDS?;
-            t.golf[golf_index++] = opt::arg[0];
-        case 'h':
-            if (hotel_index >= t.hotel.len) return opt::OUT_OF_BOUNDS?;
-            t.hotel[hotel_index++] = opt::arg;
-        // `get_india_value` just grabs the third character from the arg
-        case 'i': get_india_value(opt::arg)!;   // custom callback function to set t.india from arg
-        case 'x': t.juliet = opt::arg.to_integer(int128.typeid)!;
-        /* not listed */ case 'k': t.has_kilo = true;
-    }
+	switch (retval) {
+		case ':': // fallthrough
+		case '?': help(); /* or return a fault */
+		case 'a': t.has_alpha = true;
+		case 'b': t.has_bravo = true;
+		case 'c': t.charlie = opt::arg.to_integer(isz.typeid)!;
+		case 'd': t.delta = opt::arg.to_float()!;
+		case 'e': if (opt::arg.ptr != null) t.echo = (ZString)opt::arg.ptr;   // note: optional arg!
+		case 'f': ++t.fox;
+		case 'g':
+			if (golf_index >= t.golf.len) return opt::OUT_OF_BOUNDS?;
+			t.golf[golf_index++] = opt::arg[0];
+		case 'h':
+			if (hotel_index >= t.hotel.len) return opt::OUT_OF_BOUNDS?;
+			t.hotel[hotel_index++] = opt::arg;
+		// `get_india_value` just grabs the third character from the arg
+		case 'i': get_india_value(opt::arg)!;   // custom callback function to set t.india from arg
+		case 'x': t.juliet = opt::arg.to_integer(int128.typeid)!;
+		/* not listed */ case 'k': t.has_kilo = true;
+	}
 }
 ```
 
