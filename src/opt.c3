@@ -518,7 +518,7 @@ faultdef
 <*
 Reset all 'static' option state values to their initial states. Does not reset the option prefix.
 *>
-macro reset()
+macro @reset()
 {
 	err = ind = 1;
 	opt = reset = 0;
@@ -541,28 +541,7 @@ macro @enable_errors() => err = 1;
 
 
 <*
- @require $defined($typeof(#value)[] $arr = #arr)
-*>
-macro bool @in(#value, #arr) @const
-{
-	$typeof(#value)[] $arr = #arr;
-	$foreach $val : $arr :
-		$if #value == $val: return true; $endif
-	$endforeach
-	return false;
-}
-
-macro bool @typein($Type, typeid[] $list) @const
-{
-	$foreach $v : $list:
-		$if $Type.typeid == $v: return true; $endif
-	$endforeach
-	return false;
-}
-
-
-<*
- @require @typein($typeof(#args), { String[] })
+ @require @in($typeof(#args), String[])
 *>
 macro int? @parse(#args, ...)
 {
@@ -587,8 +566,8 @@ macro int? @parse(#args, ...)
 	// Iterate each provided triplet and build up all compile-time indices with accurate information.
 	$for var $argidx = 0, var $idx = 0; $argidx < $vacount; ++$idx, $argidx += 3:
 	{ // scoped to avoid redeclarations of 'assignee' at runtime
-		var $shortname = $vaconst[$argidx];
-		var $longname = $vaconst[$argidx + 1];
+		String $shortname = $vaconst[$argidx];
+		String $longname = $vaconst[$argidx + 1];
 		var assignee = $vaarg[$argidx + 2];
 
 		$assert $longname.len > 0 ||| $shortname.len > 0 : "You must specify at least a short or a long name for each option.";
@@ -602,13 +581,13 @@ macro int? @parse(#args, ...)
 		$endif
 
 		// If both names are set, only ONE of them may have an argument type specifier.
-		$if $defined($longname[^1], $shortname[^1]) &&& @in($longname[^1], { '+', '?' }) &&& @in($shortname[^1], { '+', '?' }):
+		$if $defined($longname[^1], $shortname[^1]) &&& @in($longname[^1], '+', '?') &&& @in($shortname[^1], '+', '?'):
 			$error "You can't have argument type specifiers (? or +) on both the short and long option names.";
 		$endif
 
 		// The third param MUST be a pointer/reference or function type.
 		var $kind_of_arg = $kindof(assignee);
-		$assert @in($kind_of_arg, { POINTER, FUNC }) : "The parameter reference " +++ $typeof(assignee).nameof +++ " is not a pointer or function type.";
+		$assert @in($kind_of_arg, POINTER, FUNC) : "The parameter reference " +++ $typeof(assignee).nameof +++ " is not a pointer or function type.";
 
 		OptionArgType $has_arg = NO_ARGUMENT;   // default
 		$if $kind_of_arg == FUNC ||| ! types::is_bool($typeof(assignee).inner): // Only 'bool*' types represent flags, which do not have arguments.
@@ -643,7 +622,7 @@ macro int? @parse(#args, ...)
 		$endswitch
 
 		// Update 'longname' to remove possible suffix.
-		$longname = ($defined($longname[^1]) &&& @in($longname[^1], { '?', '+' })) ??? $longname[..^2] : $longname;
+		$longname = ($defined($longname[^1]) &&& @in($longname[^1], '?', '+')) ??? $longname[..^2] : $longname;
 
 		longopts[$idx] = { $longname, $has_arg_runtime, null, (int)($shortname.len > 0 ??? $shortname[0] : $dyn_shortname++) };
 
@@ -661,7 +640,7 @@ macro int? @parse(#args, ...)
 	$endfor
 
 	// Reset any previous options parsing that might have been done.
-	opt::reset();
+	opt::@reset();
 
 	// This macro wraps a `getopt_long` call.
 	int longopt_index;
