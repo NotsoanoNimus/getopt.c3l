@@ -16,7 +16,7 @@ You now have 4 functions to choose from for parsing command-line options:
 Enter the compile-time `opt::@parse` macro, inspired by [D-lang's std.getopt module](https://dlang.org/phobos/std_getopt.html), but not exactly the same.
 
 ```c3
-macro void? opt::@parse(#args, ...);
+macro int? opt::@parse(#args, ...);
 ```
 
 Provide a `String[]` slice of command-line arguments as the first parameter, then variadic arguments must come in sets of 3 at a time for each defined option (this is checked at compile-time):
@@ -25,6 +25,8 @@ Provide a `String[]` slice of command-line arguments as the first parameter, the
 - A _required_ reference to a properly-typed variable or an arg-parsing callback with the signature `fn void? (String)`.
 
 There must be at least one of the two names for any option definition.
+
+The generated code behaves according to the _pointer types_ you've given to each triple.
 
 ```c3
 bool has_short_name;
@@ -50,6 +52,16 @@ if (catch err = opt::@parse(
 	}
 	return err;
 }
+```
+
+#### Option Type Specifiers
+You may notice the `*`, `?`, and `+` characters on the tail end of some options in the above sample. These are referenced in the code as "option type specifiers", and they give the compiler a bit more information about the behavior of the storage variable.
+
+```
+   '+' : Incremental - Every time the flag appears, increment the specified [numeric] type.
+   '?' : Optional - Inherits the classic "optional argument" behavior from GNU getopt.
+                     When the flag is seen, it may or may not have an argument with it.
+   '*' : Help - When this flag is encountered, it indicates an explicit request for help/usage.
 ```
 
 ## Examples
@@ -78,6 +90,8 @@ ArgsResult t;
 
 ### C3-style `opt::@parse`
 For your convenience. :tm:
+
+Take a look at my own usage of this in a CLI application [here](https://github.com/NotsoanoNimus/mftah_cli/blob/3dc5bc69a26b297db025b7deebf53d03f82340c9/src/main.c3#L81). It summarized away the entire hellish arguments parsing loop, without a ton of mystery about what's going on.
 
 ```c3
 int end_index = opt::@parse(
