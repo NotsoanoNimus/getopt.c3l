@@ -153,8 +153,10 @@ fn void? common_switch(int retval) @local
 
 	switch (retval)
 	{
-		case ':':
 		case '?':
+			io::printn("(ILLEGAL_OPTION)");
+			return opt::ILLEGAL_OPTION?;
+		case ':':
 			io::printn("(MISSING_ARGUMENT)");
 			return opt::MISSING_ARGUMENT?;
 
@@ -225,20 +227,20 @@ enum CallType : const inline int @local
 faultdef NON_FAULT;
 
 
-macro void? @run_each(#args, #expected, fault expected_fault = NON_FAULT) @local
+macro void? @run_each(#args, #expected, fault #expected_fault = ...) @local
 {
-	@run(SHORT, #args, #expected, expected_fault)!;
-	@run(LONG,  #args, #expected, expected_fault)!;
-	@run(PARSE, #args, #expected, expected_fault)!;
+	@run(SHORT, #args, #expected, ...#expected_fault)!;
+	@run(LONG,  #args, #expected, ...#expected_fault)!;
+	@run(PARSE, #args, #expected, ...#expected_fault)!;
 }
 
-macro void? @run_each_has_long(#args, #expected, fault expected_fault = NON_FAULT) @local
+macro void? @run_each_has_long(#args, #expected, fault #expected_fault = ...) @local
 {
-	@run(LONG,  #args, #expected, expected_fault)!;
-	@run(PARSE, #args, #expected, expected_fault)!;
+	@run(LONG,  #args, #expected, ...#expected_fault)!;
+	@run(PARSE, #args, #expected, ...#expected_fault)!;
 }
 
-macro void? @run(CallType $test_type, #args, #expected, fault expected_fault = NON_FAULT) @local
+macro void? @run(CallType $test_type, #args, #expected, fault #expected_fault = ...) @local
 {
 	String[] args;
 	TestResult expected;
@@ -255,24 +257,20 @@ macro void? @run(CallType $test_type, #args, #expected, fault expected_fault = N
 	foreach(i, a : args) io::printf("---> ARG[%d]: %s\n", i, a);
 
 	var $torun;
-	$switch ($test_type) :
-		$case PARSE : $torun = "parse_test";
-		$case SHORT : $torun = "getopt_test";
-		$case LONG : $torun = "getopt_long_test";
-		$case LONG_ONLY : $torun = "getopt_long_only_test";
-
-		$default : unreachable("Invalid $test_type CT enum value.");
+	$switch $test_type:
+		$case PARSE: $torun = "parse_test";
+		$case SHORT: $torun = "getopt_test";
+		$case LONG: $torun = "getopt_long_test";
+		$case LONG_ONLY: $torun = "getopt_long_only_test";
+		$default: unreachable("Invalid $test_type CT enum value.");
 	$endswitch
 
-	if (NON_FAULT == expected_fault)
-	{
+	$if !$defined(#expected_fault):
 		$eval($torun)(args)!;
 		test::@check(t == expected, "\r\n\tExpected: %s\r\n\tActual t: %s", expected, t);
-	}
-	else
-	{
-		test::@error($eval($torun)(args), expected_fault);
-	}
+	$else
+		test::@error($eval($torun)(args), #expected_fault);
+	$endif
 
 	io::printn("===============");
 }
@@ -379,10 +377,6 @@ fn void exclusive_short_long_opts()
 	@run_each_has_long({ "-ab", "--juliet=500" }, { .has_alpha = true, .has_bravo = true, .juliet = 500 })!!;
 	@run_each({ "-abk" }, { .has_alpha = true, .has_bravo = true, .has_kilo = true })!!;
 
-	// Ensure long/short options which aren't supposed to be there... aren't.
-	// @run_each({ "-ab", "-j5" }, { .has_alpha = true, .has_bravo = true, .juliet = 0 }, opt::MISSING_ARGUMENT)!!;
-	// @run_each_has_long({ "-ab", "--kilo" }, { .has_alpha = true, .has_bravo = true, .has_kilo = false }, opt::MISSING_ARGUMENT)!!;
-
 	@run(LONG, { "--alpha", "--juliet", "17000" }, { .has_alpha = true, .juliet = 17000 })!!;
 	test::@check(opt::ind == 4, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
 }
@@ -390,8 +384,27 @@ fn void exclusive_short_long_opts()
 
 fn void simple_failures()
 {
-	// Missing arguments.
+
+	// 'j' shortopt doesn't exist
+	@run_each({ "-ab", "-j5" }, { .has_alpha = true, .has_bravo = true, .juliet = 0 }, opt::ILLEGAL_OPTION)!!;
+
+	// 'c' is missing its argument value.
+	@run_each({ "-ab", "-c" }, { .has_alpha = true, .has_bravo = true }, opt::MISSING_ARGUMENT)!!;
+
+	// Argument value for 'c' is not an integer.
+	//   Using 'short' or 'long' here is a proxy to `getopt` and `getopt_long` with a custom implementation
+	//   to handle it (see `common_switch` above). In the case of `PARSE` types, the `opt::@parse` handles
+	//   essentially EVERYTHING and can return its own fault detailing the issue.
+	@run(SHORT, { "-ab", "-c", "-f" }, { .has_alpha = true, .has_bravo = true, .fox = 1 }, string::MALFORMED_INTEGER)!!;
+	@run(LONG, { "-ab", "-c", "-f" }, { .has_alpha = true, .has_bravo = true, .fox = 1 }, string::MALFORMED_INTEGER)!!;
+	@run(PARSE, { "-ab", "-c", "-f" }, { .has_alpha = true, .has_bravo = true, .fox = 1 }, opt::INVALID_INTEGER)!!;
+
+	// @run_each({ "-ab", "-j5" }, { .has_alpha = true, .has_bravo = true, .juliet = 0 }, opt::ILLEGAL_OPTION)!!;
+	// @run_each_has_long({ "-ab", "--kilo" }, { .has_alpha = true, .has_bravo = true, .has_kilo = false }, opt::MISSING_ARGUMENT)!!;
+
 	// @run(SHORT, { "-a", "-c", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
 	// @run(SHORT, { "-ac", "1234" }, { .has_alpha = true, .has_bravo = false, .charlie = 1234 })!!;
+	// @run(SHORT, { "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
+	// // Missing 'c' argument.'
 	// @run(SHORT, { "-bc", "888" }, { .has_alpha = false, .has_bravo = true, .charlie = 888 })!!;
 }
