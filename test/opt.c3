@@ -94,7 +94,7 @@ fn void fresh()
 }
 
 
-const OPTION_STR = "abc:d:e::fg:h:i:kl:";   // notice no 'juliet' here
+const OPTION_STR = "abc:d:e::fg:h:i:kl:Z";   // notice no 'juliet' here
 
 const LongOption[] LONGOPTS = {
 	{ "alpha",      NO_ARGUMENT,        null,   'a' },
@@ -109,6 +109,7 @@ const LongOption[] LONGOPTS = {
 	{ "juliet",     REQUIRED_ARGUMENT,  null,   'x' },   // ... but juliet is indicated by 'x'
 	// notice no 'kilo' here -- short opt only
 	{ "lima",       REQUIRED_ARGUMENT,  null,   'l' },
+	{ "help",       NO_ARGUMENT,        null,   'Z' },
 };
 
 
@@ -127,6 +128,7 @@ fn int? parse_test(String[] args) =>
 		null,   "juliet",   &t.juliet,   // empty shortopt
 		"k" ,   null,       &t.has_kilo,   // empty longopt
 		"l" ,   "lima",     &t.lima,
+		"Z*",   "help",     null   // only REQUEST_HELP options should have `null` storage locations
 	)!;
 
 fn void? getopt_test(String[] args)
@@ -203,6 +205,8 @@ fn void? common_switch(int retval) @local
 		case 'l':
 			t.lima = enum_by_name(MedalType, opt::arg)!;
 			io::printfn("(lima)");
+
+		case 'Z': return opt::HELP_REQUESTED?;
 	}
 }
 
@@ -379,6 +383,13 @@ fn void exclusive_short_long_opts()
 
 	@run(LONG, { "--alpha", "--juliet", "17000" }, { .has_alpha = true, .juliet = 17000 })!!;
 	test::@check(opt::ind == 4, "opt::ind must equal the length of the args slice +1 when all values are consumed.");
+}
+
+
+fn void help_extension()
+{
+	@run_each({ "-abkZ" }, {}, opt::HELP_REQUESTED)!!;
+	@run_each_has_long({ "-abk", "--help", "-c5" }, {}, opt::HELP_REQUESTED)!!;
 }
 
 

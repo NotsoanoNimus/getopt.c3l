@@ -54,6 +54,18 @@ const BAD_ARG = ':';
 
 const DEFAULT_PREFIX = '-';
 
+faultdef
+	MISSING_ARGUMENT,
+	ILLEGAL_OPTION,
+	HELP_REQUESTED,
+	INVALID_LONGOPT,
+	OUT_OF_BOUNDS,
+	INVALID_INTEGER,
+	INVALID_CHAR,
+	INVALID_ENUM_VALUE,
+	INVALID_WSTRING,
+	INVALID_FORMAT;
+
 enum GetoptPrefixType : const inline int @local
 {
 	NO_PREFIX = -1,
@@ -72,6 +84,7 @@ enum OptionArgType : const inline int
 	OPTIONAL_ARGUMENT,
 	INCREMENTAL,
 	CALLBACK,
+	REQUEST_HELP,
 }
 
 alias OptionCallback = fn void? (String);
@@ -516,18 +529,6 @@ fn int get_long_only(String[] args, ZString option_str, LongOption[] options, in
 // C3-specific declarations and components.
 //
 
-faultdef
-	MISSING_ARGUMENT,
-	ILLEGAL_OPTION,
-	HELP_REQUESTED,
-	INVALID_LONGOPT,
-	OUT_OF_BOUNDS,
-	INVALID_INTEGER,
-	INVALID_CHAR,
-	INVALID_ENUM_VALUE,
-	INVALID_WSTRING,
-	INVALID_FORMAT;
-
 
 <*
 Reset all 'static' option state values to their initial states. Does not reset the option prefix.
@@ -590,7 +591,7 @@ macro int? @parse(#args, ...) => @pool()
 
 		// The shortname should only ever be alphanumeric. This could change at a later time.
 		$assert $shortname.len <= 2
-			: @sprintf("Short-name `%s` is too long. You can only use one character and an optional argument type specifier ('?' or '+').", $shortname);
+			: @sprintf("Short-name `%s` is too long. You can only use one character and an optional argument type specifier ('*', '?', or '+').", $shortname);
 		$if $shortname.len > 0:
 			$assert ALPHANUMERIC_SET.@contains($shortname[0])
 				: `Short-name options should match the following regular expression: [a-zA-Z0-9][\+\?]?`;
@@ -607,7 +608,7 @@ macro int? @parse(#args, ...) => @pool()
 		$endif
 
 		// If both names are set, only ONE of them may have an argument type specifier.
-		$if $defined($longname[^1], $shortname[^1]) &&& @in($longname[^1], '+', '?') &&& @in($shortname[^1], '+', '?'):
+		$if $defined($longname[^1], $shortname[^1]) &&& @in($longname[^1], '*', '+', '?') &&& @in($shortname[^1], '*', '+', '?'):
 			$error "You can't have argument type specifiers (? or +) on both the short and long option names.";
 		$endif
 
@@ -616,10 +617,11 @@ macro int? @parse(#args, ...) => @pool()
 			: @sprintf("Assigned parameter from args triple #%s: type `%s` is not a pointer or function type.", $idx + 1, $typeof(assignee).nameof);
 
 		OptionArgType $has_arg = NO_ARGUMENT;   // default
-		$if $kindof(assignee) == FUNC ||| ! types::is_bool($typeof(assignee).inner): // Only 'bool*' types represent flags, which do not have arguments.
+		$if $kindof(assignee) == FUNC ||| $typeof(assignee).inner.kindof != BOOL: // Only 'bool*' types represent flags, which do not have arguments.
 			$switch:
 				$case ($longname.len >= 2 &&& $longname[^1] == '?') ||| ($shortname.len >= 2 &&& $shortname[1] == '?'): $has_arg = OPTIONAL_ARGUMENT;
 				$case ($longname.len >= 2 &&& $longname[^1] == '+') ||| ($shortname.len >= 2 &&& $shortname[1] == '+'): $has_arg = INCREMENTAL;   // incremental types do not accept arguments
+				$case ($longname.len >= 2 &&& $longname[^1] == '*') ||| ($shortname.len >= 2 &&& $shortname[1] == '*'): $has_arg = REQUEST_HELP;   // nor do help types
 				$case $kindof(assignee) == FUNC: $has_arg = CALLBACK;
 				$default: $has_arg = REQUIRED_ARGUMENT;
 			$endswitch
@@ -704,6 +706,9 @@ macro int? @parse(#args, ...) => @pool()
 
 					// Now set the option handler's behavior based on the type of argument (if any) that's expected.
 					$switch $ct_argstype[$idx] :
+						$case OptionArgType.REQUEST_HELP:
+							return HELP_REQUESTED?;
+
 						$case OptionArgType.NO_ARGUMENT:
 							*assignee = true;
 
