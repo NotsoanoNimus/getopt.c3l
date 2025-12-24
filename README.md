@@ -31,18 +31,32 @@ bool has_short_name;
 String optional_val;
 uint ctr;
 
-if (catch opt::@parse(
+if (catch err = opt::@parse(
 	args,
-	"s", "short-name", &has_short_name,
-	"o?", "optional", &optional_val,
-	null , "counter+", &ctr,
-)) show_help();
+	"s" , "short-name", &has_short_name,
+	"o?", "optional"  , &optional_val,
+	null, "counter+"  , &ctr,
+	null, "help*"     , null
+)) {
+	switch (err)
+	{
+		case opt::HELP_REQUESTED:
+		case opt::MISSING_ARGUMENT:
+		case opt::ILLEGAL_OPTION:
+			show_help();
+		default:
+			// i.e., INVALID_INTEGER, OUT_OF_BOUNDS, etc.
+			something_else_is_wrong();
+	}
+	return err;
+}
 ```
 
 ## Examples
 The below usage examples reference/populate this struct:
 
 ```c3
+// Look at all these different types we can auto-populate.
 struct ArgsResult
 {
 	bool        has_alpha;
@@ -56,6 +70,7 @@ struct ArgsResult
 	char        india;
 	int128      juliet;
 	bool        has_kilo;
+	SomeEnum    lima;
 }
 
 ArgsResult t;
@@ -67,24 +82,31 @@ For your convenience. :tm:
 ```c3
 int end_index = opt::@parse(
 	args,
-	"a" ,   "alpha",    &t.has_alpha,
-	"b" ,   "bravo",    &t.has_bravo,
-	"c" ,   "charlie",  &t.charlie,
-	"d" ,   "delta",    &t.delta,
+	"a" ,   "alpha",    &t.has_alpha,   // bool/flag
+	"b" ,   "bravo",    &t.has_bravo,   // bool/flag
+	"c" ,   "charlie",  &t.charlie,   // integer
+	"d" ,   "delta",    &t.delta,   // float
 	"e?",   "echo",     &t.echo,   // '?' means 'optional argument'
 	"f" ,   "fox+",     &t.fox,   // '+' means 'incremental argument' (val++ each time flag is seen)
-	"g" ,   "golf",     &t.golf,
-	"h" ,   "hotel",    &t.hotel,
+	"g" ,   "golf",     &t.golf,   // char array
+	"h" ,   "hotel",    &t.hotel,   // string array
 	"i" ,   "india",    &get_india_value,   // callback
-	""  ,   "juliet",   &t.juliet,   // empty shortopt
-	"k"  ,  "",         &t.has_kilo,   // empty longopt
+	null,   "juliet",   &t.juliet,   // empty shortopt
+	"k" ,   null,       &t.has_kilo,   // empty longopt
+	"l" ,   "lima",     &t.lima,   // an enum
+	"Z*",   "help",     null,   // explicit request for help/usage
 )!;
 ```
 
 ```
-Input :  { "program-name", "-abc123", "--delta=0.74", "-e", "--fox", "--", "nonopt", "these options", "-c3", "-dont", "get", "parsed" },
-Output:  { .has_alpha = true, .has_bravo = true, .charlie = 123, .delta = 0.74, .fox = 1 }
-Return:  6   // indexof("--") + 1 - the would-be index of the first value after the stop marker, if any are present
+Input :  { "program-name", "-abc123", "--delta=0.74", "-e", "--fox",
+           "--", "nonopt", "these options", "-c3", "-dont", "get", "parsed" },
+
+Output:  { .has_alpha = true, .has_bravo = true,
+           .charlie = 123, .delta = 0.74, .fox = 1 }
+
+Return:  6   // indexof("--") + 1 - the would-be index of the first value
+             //   after the stop marker, if any are present
 ```
 
 ### opt::get
@@ -93,9 +115,11 @@ Short options only.
 ```c3
 // intentionally leaves out 'juliet' which, following the example, is supposed to a longopt ONLY
 int retval;
-while (-1 != (retval = opt::get(args, "abc:d:e::fg:h:i:k"))) {
+while (-1 != (retval = opt::get(args, "abc:d:e::fg:h:i:kZ")))
+{
 	switch (retval) {
-		case ':': // fallthrough
+		case 'Z': // fallthrough - help request
+		case ':': // fallthrough - getopt error
 		case '?': help(); /* or return a fault */
 		case 'a': t.has_alpha = true;
 		case 'b': t.has_bravo = true;
@@ -141,10 +165,13 @@ LongOption[] longopts = {
 	{ "india",      REQUIRED_ARGUMENT,  null,   'i' },
 	{ "juliet",     REQUIRED_ARGUMENT,  null,   'x' },   // ... but juliet is indicated by 'x'
 	// notice no 'kilo' here -- short opt only
+	{ "help",       NO_ARGUMENT,        null,   'Z' }
 };
-while (-1 != (retval = opt::get_long(args, "abc:d:e::fg:h:i:k", longopts, &longopt_idx))) {
+while (-1 != (retval = opt::get_long(args, "abc:d:e::fg:h:i:kZ", longopts, &longopt_idx)))
+{
 	switch (retval) {
-		case ':': // fallthrough
+		case 'Z': // fallthrough - help request
+		case ':': // fallthrough - getopt error
 		case '?': help(); /* or return a fault */
 		case 'a': t.has_alpha = true;
 		case 'b': t.has_bravo = true;
@@ -168,7 +195,11 @@ while (-1 != (retval = opt::get_long(args, "abc:d:e::fg:h:i:k", longopts, &longo
 
 Notice how the short and long options can mix in such a way that `getopt_long` supports everything that `getopt` itself does with short options.
 ```
-Input :  { "program-name", "-esomething", "-fff", "-haaa", "--fox", "-ad0.4", "--hotel", "beauty how it works innit" },
-Output:  { .has_alpha = true, .delta = 0.4, .echo = "something", .fox = 4, .hotel = { "aaa", "beauty how it works innit", "" } }
+Input :  { "program-name", "-esomething", "-fff", "-haaa", "--fox",
+           "-ad0.4", "--hotel", "beauty at work" },
+
+Output:  { .has_alpha = true, .delta = 0.4, .echo = "something",
+           .fox = 4, .hotel = { "aaa", "beauty at work", "" } }
+
 Return:  8   // args.len
 ```
