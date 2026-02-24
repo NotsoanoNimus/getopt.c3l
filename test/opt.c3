@@ -1,6 +1,6 @@
 // getopt.c3l: unit tests module
 //
-// Copyright (c) 2025 Zack Puhl <github@xmit.xyz>
+// Copyright (c) 2025-2026 Zack Puhl <github@xmit.xyz>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -71,7 +71,7 @@ int longopt_index, golf_index, hotel_index;
 
 fn void? get_india_value(String arg)
 {
-	if (arg.len < 3) return TEST_FAILURE?;
+	if (arg.len < 3) return TEST_FAILURE~;
 
 	t.india = arg[2];
 }
@@ -157,10 +157,10 @@ fn void? common_switch(int retval) @local
 	{
 		case '?':
 			io::printn("(ILLEGAL_OPTION)");
-			return opt::ILLEGAL_OPTION?;
+			return opt::ILLEGAL_OPTION~;
 		case ':':
 			io::printn("(MISSING_ARGUMENT)");
-			return opt::MISSING_ARGUMENT?;
+			return opt::MISSING_ARGUMENT~;
 
 		case 'a': t.has_alpha = true; io::printn("(alpha)");
 		case 'b': t.has_bravo = true; io::printn("(bravo)");
@@ -171,15 +171,15 @@ fn void? common_switch(int retval) @local
 
 		case 'g':
 			io::printf("(golf:%d)\n", golf_index);
-			if (golf_index >= t.golf.len) return opt::OUT_OF_BOUNDS?;
-			if (opt::arg.len == 0 || !opt::arg.ptr) return opt::MISSING_ARGUMENT?;
+			if (golf_index >= t.golf.len) return opt::OUT_OF_BOUNDS~;
+			if (opt::arg.len == 0 || !opt::arg.ptr) return opt::MISSING_ARGUMENT~;
 			t.golf[golf_index] = opt::arg[0];
 			++golf_index;
 
 		case 'h':
 			io::printf("(hotel:%d)\n", hotel_index);
-			if (hotel_index >= t.hotel.len) return opt::OUT_OF_BOUNDS?;
-			if (opt::arg.len == 0 || !opt::arg.ptr) return opt::MISSING_ARGUMENT?;
+			if (hotel_index >= t.hotel.len) return opt::OUT_OF_BOUNDS~;
+			if (opt::arg.len == 0 || !opt::arg.ptr) return opt::MISSING_ARGUMENT~;
 			t.hotel[hotel_index] = opt::arg;
 			++hotel_index;
 
@@ -191,7 +191,7 @@ fn void? common_switch(int retval) @local
 			}
 			else
 			{
-				return opt::MISSING_ARGUMENT?;
+				return opt::MISSING_ARGUMENT~;
 			}
 
 		case 'x':   // juliet
@@ -206,7 +206,7 @@ fn void? common_switch(int retval) @local
 			t.lima = enum_by_name(MedalType, opt::arg)!;
 			io::printfn("(lima)");
 
-		case 'Z': return opt::HELP_REQUESTED?;
+		case 'Z': return opt::HELP_REQUESTED~;
 	}
 }
 
@@ -219,7 +219,7 @@ module opt_tests @test;
 import opt;
 import std::io;
 
-enum CallType : const inline int @local
+enum CallType : inline int @local
 {
 	SHORT,
 	LONG,
@@ -253,7 +253,7 @@ macro void? @run(CallType $test_type, #args, #expected, fault #expected_fault = 
 	assert(t == (TestResult){}, "Static TestResult `t` was not cleared before another test started.");
 
 	// 'args' is always prepended with a dummy value to mimic the ever-present '$0'
-	args = { "program-name" , ...(String[])#args };   
+	args = { "program-name" , ...(String[])#args };
 
 	expected = #expected;   // set expected value from param expression
 
