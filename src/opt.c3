@@ -57,7 +57,7 @@ faultdef
 	INVALID_WSTRING,
 	INVALID_FORMAT;
 
-constdef GetoptPrefixType : inline int @local
+constdef GetoptPrefixType : inline int @local @constinit
 {
 	NO_PREFIX = -1,
 	D_PREFIX = 0,
