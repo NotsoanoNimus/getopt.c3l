@@ -73,7 +73,7 @@ struct ArgsResult
 {
 	bool        has_alpha;
 	bool        has_bravo;
-	isz         charlie;
+	sz         charlie;
 	float       delta;
 	ZString     echo;
 	uint        fox;
@@ -137,7 +137,7 @@ while (-1 != (retval = opt::get(args, "abc:d:e::fg:h:i:kZ")))
 		case '?': help(); /* or return a fault */
 		case 'a': t.has_alpha = true;
 		case 'b': t.has_bravo = true;
-		case 'c': t.charlie = opt::arg.to_integer(isz.typeid)!;
+		case 'c': t.charlie = string::to_integer{sz}(opt::arg)!;
 		case 'd': t.delta = opt::arg.to_float()!;
 		case 'e': if (opt::arg.ptr != null) t.echo = (ZString)opt::arg.ptr;   // note: optional arg!
 		case 'f': ++t.fox;
@@ -149,7 +149,7 @@ while (-1 != (retval = opt::get(args, "abc:d:e::fg:h:i:kZ")))
 			t.hotel[hotel_index++] = opt::arg;
 		// `get_india_value` just grabs the third character from the arg
 		case 'i': get_india_value(opt::arg)!;   // custom callback function to set t.india from arg
-		/* not listed */ case 'x': t.juliet = opt::arg.to_integer(int128.typeid)!;
+		/* not listed */ case 'x': t.juliet = opt::arg.to_int128()!;
 		case 'k': t.has_kilo = true;
 	}
 }
@@ -189,7 +189,7 @@ while (-1 != (retval = opt::get_long(args, "abc:d:e::fg:h:i:kZ", longopts, &long
 		case '?': help(); /* or return a fault */
 		case 'a': t.has_alpha = true;
 		case 'b': t.has_bravo = true;
-		case 'c': t.charlie = opt::arg.to_integer(isz.typeid)!;
+		case 'c': t.charlie = string::to_integer{sz}(opt::arg)!;
 		case 'd': t.delta = opt::arg.to_float()!;
 		case 'e': if (opt::arg.ptr != null) t.echo = (ZString)opt::arg.ptr;   // note: optional arg!
 		case 'f': ++t.fox;
@@ -201,7 +201,7 @@ while (-1 != (retval = opt::get_long(args, "abc:d:e::fg:h:i:kZ", longopts, &long
 			t.hotel[hotel_index++] = opt::arg;
 		// `get_india_value` just grabs the third character from the arg
 		case 'i': get_india_value(opt::arg)!;   // custom callback function to set t.india from arg
-		case 'x': t.juliet = opt::arg.to_integer(int128.typeid)!;
+		case 'x': t.juliet = opt::arg.to_int128()!;
 		/* not listed */ case 'k': t.has_kilo = true;
 	}
 }

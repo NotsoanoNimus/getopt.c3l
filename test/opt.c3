@@ -30,18 +30,6 @@ import std::io;
 
 faultdef TEST_FAILURE;
 
-<*
- @require $typeof(left) == $typeof(right)
-*>
-macro bool struct_cmp(left, right)
-{
-	$foreach $member : $typeof(left).membersof:
-		$assert $defined($member.get(left) != $member.get(right)) : "All struct members must support the == operator";
-		if ($member.get(left) != $member.get(right)) return false;
-	$endforeach
-	return true;
-}
-
 enum MedalType
 {
 	PLATINUM,
@@ -54,7 +42,7 @@ struct TestResult (Printable)
 {
 	bool has_alpha;
 	bool has_bravo;
-	isz charlie;
+	sz charlie;
 	float delta;
 	ZString echo;
 	uint fox;
@@ -77,9 +65,9 @@ fn void? get_india_value(String arg)
 }
 
 
-fn bool TestResult.eq(self, TestResult other) @operator(==) => struct_cmp(self, other);
+fn bool TestResult.eq(self, TestResult other) @operator(==) => member_eq(self, other);
 
-fn usz? TestResult.to_format(&self, Formatter* f) @dynamic
+fn sz? TestResult.to_format(&self, Formatter* f) @dynamic
 	=> f.printf(
 		"[A(%s) B(%s) C(%s) D(%s) E(%s) F(%s) G(%s) H(%s) I(%s) J(%s) K(%s)]",
 		self.has_alpha, self.has_bravo, self.charlie, self.delta, self.echo, self.fox, self.golf, self.hotel, self.india, self.juliet, self.has_kilo
@@ -164,7 +152,7 @@ fn void? common_switch(int retval) @local
 
 		case 'a': t.has_alpha = true; io::printn("(alpha)");
 		case 'b': t.has_bravo = true; io::printn("(bravo)");
-		case 'c': t.charlie = opt::arg.to_integer(isz.typeid)!; io::printn("(charlie)");
+		case 'c': t.charlie = string::to_integer{sz}(opt::arg)!; io::printn("(charlie)");
 		case 'd': t.delta = opt::arg.to_float()!; io::printn("(delta)");
 		case 'e': if (opt::arg.ptr != null) t.echo = (ZString)opt::arg.ptr; io::printn("(echo)");
 		case 'f': ++t.fox; io::printn("(fox)");
@@ -195,7 +183,7 @@ fn void? common_switch(int retval) @local
 			}
 
 		case 'x':   // juliet
-			t.juliet = opt::arg.to_integer(int128.typeid)!;
+			t.juliet = opt::arg.to_int128()!;
 			io::printn("(juliet)");
 
 		case 'k':
@@ -219,7 +207,7 @@ module opt_tests @test;
 import opt;
 import std::io;
 
-enum CallType : inline int @local
+enum CallType : int @local
 {
 	SHORT,
 	LONG,
