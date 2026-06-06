@@ -390,6 +390,10 @@ fn void simple_failures()
 	// 'c' is missing its argument value.
 	@run_each({ "-ab", "-c" }, { .has_alpha = true, .has_bravo = true }, opt::MISSING_ARGUMENT)!!;
 
+	// Long option with required argument provided as the last arg with no value following.
+	@run(LONG,  { "--charlie" }, {}, opt::MISSING_ARGUMENT)!!;
+	@run(PARSE, { "--charlie" }, {}, opt::MISSING_ARGUMENT)!!;
+
 	// Argument value for 'c' is not an integer.
 	//   Using 'short' or 'long' here is a proxy to `getopt` and `getopt_long` with a custom implementation
 	//   to handle it (see `common_switch` above). In the case of `PARSE` types, the `opt::@parse` handles
