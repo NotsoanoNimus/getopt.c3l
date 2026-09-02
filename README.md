@@ -2,6 +2,16 @@
 A GNU getopt library analog for parsing command-line arguments in C3 projects, with some extra C3 spice on top.
 
 
+-----
+# Archived
+
+The work done in this library has been much improved and evolved by @ManuLinares at [this repository](https://github.com/ManuLinares/argparse).
+
+I highly recommend you use his excellent work!
+
+-----
+
+
 ## Usage
 To use the options parser, start by importing `opt` into your module.
 
